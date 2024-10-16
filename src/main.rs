@@ -1,7 +1,10 @@
 use candle_core::{Device, Tensor, IndexOp};
+use dataset::Dataset;
 
 use std::fs;
+use rand::{Rng, SeedableRng};
 
+mod dataset;
 mod vocab;
 use vocab::Vocab;
 
@@ -13,6 +16,8 @@ fn main() {
     println!("Vocab size: {}", vocab.len());
 
     let device = Device::Cpu;
+    let mut rng = rand_pcg::Pcg32::seed_from_u64(1337);
+
     let data = Tensor::new(
         vocab.encode(&contents),
         &device
@@ -21,12 +26,25 @@ fn main() {
         .expect("Unable to cast to I64");
     println!("{:?} - {:?}", data.shape(), data.dtype());
 
-    let data_len = data.shape().dims1().unwrap();
-    let n = (0.9 * data_len as f64).trunc() as i64;
-    println!("Training set size: {n}");
-    println!("Validation set size: {}", data_len as i64 - n);
+    let mut dataset = Dataset::new(&data);
 
+    println!("Training set size: {}", dataset.training_len());
+    println!("Validation set size: {}", dataset.validation_len());
+
+    // How many independent sequences will we process in parallel
+    let batch_size = 4;
+    // What is the maximum context length for predictions
     let block_size = 8;
-    let test = data.i((..block_size + 1,)).unwrap();
-    dbg!(test);
+
+    let x = dataset.training.i((..block_size,)).unwrap();
+    let y = dataset.training.i((1..block_size + 1,)).unwrap();
+
+    for t in 0..block_size {
+        let context = x.i((..t + 1,)).unwrap();
+        let target = y.get(t).unwrap();
+        println!("when input is {:?} the target is {:?}", context, target);
+    }
+
+    let batch = dataset.get_batch(batch_size, block_size);
+    dbg!(batch);
 }
