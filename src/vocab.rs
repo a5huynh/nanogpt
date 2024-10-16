@@ -1,4 +1,7 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 pub type TokenSize = u32;
 
@@ -9,7 +12,11 @@ pub struct Vocab {
 
 impl Display for Vocab {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<{}>", self.vocab.iter().collect::<String>().escape_default())
+        write!(
+            f,
+            "<{}>",
+            self.vocab.iter().collect::<String>().escape_default()
+        )
     }
 }
 

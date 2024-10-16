@@ -1,4 +1,4 @@
-use candle_core::{Tensor, IndexOp};
+use candle_core::{IndexOp, Tensor};
 use rand::{Rng, SeedableRng};
 use rand_pcg::Lcg64Xsh32;
 
@@ -44,17 +44,26 @@ impl Dataset {
         self.validation_len
     }
 
-    /// Generate a small batch of data of inputs x and targets y
-    pub fn get_batch(&mut self, batch_size: usize, block_size: usize) -> Tensor {
-        let batch_range: Vec<usize> =  (0..batch_size)
+    /// Generate a small batch of data of (inputs, targets)
+    pub fn get_batch(&mut self, batch_size: usize, block_size: usize) -> (Tensor, Tensor) {
+        let batch_range: Vec<usize> = (0..batch_size)
             .map(|_| self.rng.gen_range(0..self.training_len - block_size))
             .collect();
 
-        let rows = batch_range.iter().map(|batch_start| {
-            self.training.i((*batch_start..*batch_start + block_size,))
-            .unwrap()
+        let inputs = batch_range.iter().map(|batch_start| {
+            self.training
+                .i((*batch_start..*batch_start + block_size,))
+                .unwrap()
         });
 
-        Tensor::stack(&rows.collect::<Vec<_>>(), 0).unwrap()
+        let targets = batch_range.iter().map(|batch_start| {
+            let t_start = batch_start + 1;
+            self.training.i((t_start..t_start + block_size,)).unwrap()
+        });
+
+        (
+            Tensor::stack(&inputs.collect::<Vec<_>>(), 0).unwrap(),
+            Tensor::stack(&targets.collect::<Vec<_>>(), 0).unwrap(),
+        )
     }
 }

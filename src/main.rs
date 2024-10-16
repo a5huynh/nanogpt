@@ -1,8 +1,8 @@
-use candle_core::{Device, Tensor, IndexOp};
+use candle_core::{Device, IndexOp, Tensor};
 use dataset::Dataset;
 
-use std::fs;
 use rand::{Rng, SeedableRng};
+use std::fs;
 
 mod dataset;
 mod vocab;
@@ -18,11 +18,9 @@ fn main() {
     let device = Device::Cpu;
     let mut rng = rand_pcg::Pcg32::seed_from_u64(1337);
 
-    let data = Tensor::new(
-        vocab.encode(&contents),
-        &device
-    ).expect("Unable to create tensor");
-    let data = data.to_dtype(candle_core::DType::I64)
+    let data = Tensor::new(vocab.encode(&contents), &device).expect("Unable to create tensor");
+    let data = data
+        .to_dtype(candle_core::DType::I64)
         .expect("Unable to cast to I64");
     println!("{:?} - {:?}", data.shape(), data.dtype());
 
