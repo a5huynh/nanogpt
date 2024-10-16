@@ -28,6 +28,7 @@ fn main() {
 
     let mut dataset = Dataset::new(&data);
 
+    println!("Total dataset size: {}", dataset.len());
     println!("Training set size: {}", dataset.training_len());
     println!("Validation set size: {}", dataset.validation_len());
 

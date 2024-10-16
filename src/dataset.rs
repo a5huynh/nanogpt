@@ -12,7 +12,7 @@ pub struct Dataset {
 
 impl Dataset {
     pub fn new(data: &Tensor) -> Self {
-        let data_len = data.shape().dims1().unwrap();
+        let data_len = data.elem_count();
         let split = (0.9 * data_len as f64).trunc() as usize;
 
         let train_data = data.i((..split,)).expect("Unable to split training data");
@@ -20,12 +20,16 @@ impl Dataset {
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
 
         Self {
+            training_len: train_data.elem_count(),
+            validation_len: val_data.elem_count(),
             training: train_data,
             validation: val_data,
-            training_len: split,
-            validation_len: data_len - split,
             rng,
         }
+    }
+
+    pub fn set_seed(&mut self, seed: u64) {
+        self.rng = rand_pcg::Pcg32::seed_from_u64(seed);
     }
 
     pub fn len(&self) -> usize {
