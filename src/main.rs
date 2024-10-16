@@ -1,7 +1,6 @@
 use candle_core::{Device, IndexOp, Tensor};
 use dataset::Dataset;
 
-use rand::{Rng, SeedableRng};
 use std::fs;
 
 mod dataset;
@@ -16,8 +15,6 @@ fn main() {
     println!("Vocab size: {}", vocab.len());
 
     let device = Device::Cpu;
-    let mut rng = rand_pcg::Pcg32::seed_from_u64(1337);
-
     let data = Tensor::new(vocab.encode(&contents), &device).expect("Unable to create tensor");
     let data = data
         .to_dtype(candle_core::DType::I64)
@@ -25,7 +22,6 @@ fn main() {
     println!("{:?} - {:?}", data.shape(), data.dtype());
 
     let mut dataset = Dataset::new(&data);
-
     println!("Total dataset size: {}", dataset.len());
     println!("Training set size: {}", dataset.training_len());
     println!("Validation set size: {}", dataset.validation_len());

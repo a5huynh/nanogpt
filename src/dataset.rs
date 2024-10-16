@@ -52,7 +52,7 @@ impl Dataset {
 
         let inputs = batch_range.iter().map(|batch_start| {
             self.training
-                .i((*batch_start..*batch_start + block_size,))
+                .i((*batch_start..batch_start + block_size,))
                 .unwrap()
         });
 
