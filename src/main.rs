@@ -31,15 +31,20 @@ fn main() {
     // What is the maximum context length for predictions
     let block_size = 8;
 
-    let x = dataset.training.i((..block_size,)).unwrap();
-    let y = dataset.training.i((1..block_size + 1,)).unwrap();
+    let (input, target) = dataset.get_batch(batch_size, block_size);
+    println!("inputs: {:?}", input.shape());
+    println!("targets: {:?}", target.shape());
+    println!("-----");
 
-    for t in 0..block_size {
-        let context = x.i((..t + 1,)).unwrap();
-        let target = y.get(t).unwrap();
-        println!("when input is {:?} the target is {:?}", context, target);
+    for bidx in 0..batch_size {
+        for t in 0..block_size {
+            let context = input.i((bidx, ..t + 1)).unwrap();
+            let target = target.i((bidx, t)).unwrap();
+            println!(
+                "when input is {:?} the target: {}",
+                context.to_vec1::<i64>().unwrap(),
+                target.to_vec0::<i64>().unwrap()
+            );
+        }
     }
-
-    let batch = dataset.get_batch(batch_size, block_size);
-    dbg!(batch);
 }
