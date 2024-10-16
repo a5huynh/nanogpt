@@ -76,6 +76,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "candle-nn"
+version = "0.7.2"
+source = "git+https://github.com/huggingface/candle.git#a01aa897991fbc3da2dfda568b4254f697fdd598"
+dependencies = [
+ "candle-core",
+ "half",
+ "num-traits",
+ "rayon",
+ "safetensors",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -387,6 +401,7 @@ name = "nanogpt"
 version = "0.1.0"
 dependencies = [
  "candle-core",
+ "candle-nn",
  "rand",
  "rand_pcg",
 ]
