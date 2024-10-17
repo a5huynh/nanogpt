@@ -5,6 +5,7 @@ use rand::SeedableRng;
 use std::fs;
 
 mod dataset;
+mod model;
 mod vocab;
 use vocab::Vocab;
 
@@ -50,4 +51,13 @@ fn main() {
             );
         }
     }
+
+    let mut model = model::BigramModel::new(&device, &rng, vocab.len());
+    let (logits, loss) = model.train(&input, &target).unwrap();
+    dbg!(logits.shape());
+    dbg!(loss);
+
+    let test = Tensor::zeros((1, 1), candle_core::DType::I64, &device).unwrap();
+    let generated = model.generate(&test, 1).unwrap();
+    dbg!(generated);
 }
