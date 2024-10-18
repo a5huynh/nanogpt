@@ -61,4 +61,10 @@ impl Dataset {
             Tensor::stack(&targets.collect::<Vec<_>>(), 0).unwrap(),
         )
     }
+
+    pub fn print_stats(&self) {
+        println!("Total dataset size: {}", self.len());
+        println!("Training set size: {}", self.training_len());
+        println!("Validation set size: {}", self.validation_len());
+    }
 }

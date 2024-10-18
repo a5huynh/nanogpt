@@ -41,24 +41,42 @@ impl BigramModel {
     /// ctxt: The current context of characters as a (B, T) array of indices.
     /// Extends ctxt by <max_new_tokens>
     pub fn generate(&mut self, ctxt: &Tensor, max_new_tokens: usize) -> Result<Tensor> {
+        log::info!("Generating {max_new_tokens} token(s)");
+        log::info!("Starting shape: {:?}", ctxt.shape());
+
         let mut ctxt = ctxt.clone();
         // get predictions
         for _ in 0..max_new_tokens {
-            dbg!(ctxt.shape());
             let logits = self.forward(&ctxt)?;
             // focus only on the last time step
             let (_, last, _) = logits.shape().dims3()?;
             let logits = logits.i((.., last - 1, ..))?; // Becomes [B, C]
-            dbg!(logits.shape());
 
-            // apply softmax to get probabilities
+            // Apply softmax to get probabilities
+            // This gives us a tensor of [B, C] with the probabilities for each character
+            // for each batch. e.g., a single batch will give us [1, C]
             let probs = softmax_last_dim(&logits)?;
 
-            // sample from the distribution for each batch
-            // let dist = rand::distributions::WeightedIndex::new(&probs).unwrap();
-            // let next_token = dist.sample(&mut self.rng) as f32;
-            // append the sampled index to the running sequence.
-            // ctxt = Tensor::cat(&[&ctxt, &Tensor::new(&[next_token], &self.device)?], 1)?;
+            // Sample from the distribution for each batch
+            // Build a tensor where each row contains something sampled from the probability distribution
+            // given by the softmax, This essentially simulates torch.multinomal(probs, num_samples=1)
+            // which is not implemented in candle.
+            let mut samples: Vec<i64> = Vec::new();
+            let num_batches = probs.dim(0)?;
+            for idx in 0..num_batches {
+                let batch_probs = probs.i((idx, ..))?;
+                // Each element in this vec is the probability of that particular character
+                // in the vocab occuring next.
+                let batch_probs = batch_probs.to_vec1::<f32>()?;
+                // We put this into a weighted index & sample for the next token.
+                let dist = rand::distributions::WeightedIndex::new(&batch_probs).unwrap();
+                let next_token = dist.sample(&mut self.rng) as i64;
+                samples.push(next_token);
+            }
+            // Append the sampled index to the running sequence.
+            let samples = Tensor::new(samples, &self.device)?;
+            let samples = samples.reshape((num_batches, 1))?;
+            ctxt = Tensor::cat(&[&ctxt, &samples], 1)?;
         }
 
         Ok(ctxt)
