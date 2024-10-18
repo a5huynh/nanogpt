@@ -1,5 +1,5 @@
 use candle_core::{IndexOp, Tensor};
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 use rand_pcg::Lcg64Xsh32;
 
 pub struct Dataset {

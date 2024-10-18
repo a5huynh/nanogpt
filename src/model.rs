@@ -15,13 +15,11 @@ impl BigramModel {
         // Similar to nn.Parameter in pytorch.
         let var_map = VarMap::new();
         let var_builder = VarBuilder::from_varmap(&var_map, DType::F32, device);
-        let embedding = var_builder.get((vocab_size, vocab_size), "embeddings")
-                .unwrap();
+        let embedding = var_builder
+            .get((vocab_size, vocab_size), "embeddings")
+            .unwrap();
 
-        let embedding = Embedding::new(
-            embedding,
-            vocab_size,
-        );
+        let embedding = Embedding::new(embedding, vocab_size);
 
         Self {
             token_embedding_table: embedding,

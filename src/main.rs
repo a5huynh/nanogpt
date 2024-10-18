@@ -1,5 +1,5 @@
 use candle_core::{Device, IndexOp, Tensor};
-use candle_nn::{AdamW, Optimizer, VarBuilder};
+use candle_nn::{AdamW, Optimizer};
 use dataset::Dataset;
 use rand::SeedableRng;
 
@@ -19,26 +19,8 @@ fn main() -> Result<(), candle_core::Error> {
     let mut dataset = Dataset::new(&rng, &data);
     dataset.print_stats();
 
-    // How many independent sequences will we process in parallel
-    let batch_size = 32;
-    // What is the maximum context length for predictions
-    let block_size = 8;
-
     let mut model = model::BigramModel::new(&device, &rng, vocab.len());
-    let mut optimizer = AdamW::new_lr(model.parameters.all_vars(), 1e-3)?;
-
-    for step in 0..10000 {
-        // sample a batch of data
-        let (input, target) = dataset.get_batch(batch_size, block_size);
-        // evaluate the loss
-        let (_, loss) = model.train(&input, &target)?;
-        // Combines loss.backward() & optimizer.step() from pytorch.
-        optimizer.backward_step(&loss)?;
-        let loss = loss.to_vec0::<f32>()?;
-        if step % 100 == 0 {
-            log::debug!("Loss = {loss} @ step {step}");
-        }
-    }
+    train_simple_bigram_model(&mut dataset, &mut model, 32, 8, 10_000)?;
 
     // Use the trained model to generate some text
     log::info!("Testing model, generating a string...");
@@ -52,23 +34,48 @@ fn main() -> Result<(), candle_core::Error> {
     Ok(())
 }
 
-
 fn load_dataset(device: &Device) -> (Vocab, Tensor) {
     let contents = std::fs::read_to_string("./data/input.txt").expect("Unable to read input file");
     let vocab = Vocab::from_content(&contents);
-    let data = Tensor::new(vocab.encode(&contents), &device).expect("Unable to create tensor");
+    let data = Tensor::new(vocab.encode(&contents), device).expect("Unable to create tensor");
     let data = data
         .to_dtype(candle_core::DType::I64)
         .expect("Unable to cast to I64");
     (vocab, data)
 }
 
+fn train_simple_bigram_model(
+    dataset: &mut Dataset,
+    model: &mut model::BigramModel,
+    // How many independent sequences will we process in parallel
+    batch_size: usize,
+    // What is the maximum context length for predictions
+    block_size: usize,
+    num_steps: usize,
+) -> Result<(), candle_core::Error> {
+    let mut optimizer = AdamW::new_lr(model.parameters.all_vars(), 1e-3)?;
+
+    for step in 0..num_steps {
+        // sample a batch of data
+        let (input, target) = dataset.get_batch(batch_size, block_size);
+        // evaluate the loss
+        let (_, loss) = model.train(&input, &target)?;
+        // Combines loss.backward() & optimizer.step() from pytorch.
+        optimizer.backward_step(&loss)?;
+        let loss = loss.to_vec0::<f32>()?;
+        if step % 100 == 0 {
+            log::debug!("Loss = {loss} @ step {step}");
+        }
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod test {
+    use crate::{dataset::Dataset, load_dataset};
     use candle_core::{Device, IndexOp, Tensor};
     use rand::SeedableRng;
-    use crate::{dataset::Dataset, load_dataset};
 
     #[test]
     fn test_batching() {
