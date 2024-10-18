@@ -1,5 +1,5 @@
 use candle_core::{DType, Device, IndexOp, Result, Shape, Tensor};
-use candle_nn::{loss, ops::{softmax, softmax_last_dim}, Embedding, Module};
+use candle_nn::{loss, ops::softmax_last_dim, Embedding, Module, VarBuilder, VarMap};
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
@@ -7,12 +7,19 @@ pub struct BigramModel {
     token_embedding_table: Embedding,
     device: Device,
     rng: Lcg64Xsh32,
+    pub parameters: VarMap,
 }
 
 impl BigramModel {
     pub fn new(device: &candle_core::Device, rng: &Lcg64Xsh32, vocab_size: usize) -> Self {
+        // Similar to nn.Parameter in pytorch.
+        let var_map = VarMap::new();
+        let var_builder = VarBuilder::from_varmap(&var_map, DType::F32, device);
+        let embedding = var_builder.get((vocab_size, vocab_size), "embeddings")
+                .unwrap();
+
         let embedding = Embedding::new(
-            Tensor::zeros((vocab_size, vocab_size), DType::F32, device).unwrap(),
+            embedding,
             vocab_size,
         );
 
@@ -20,10 +27,11 @@ impl BigramModel {
             token_embedding_table: embedding,
             device: device.clone(),
             rng: rng.clone(),
+            parameters: var_map,
         }
     }
 
-    pub fn train(&self, inputs: &Tensor, targets: &Tensor) -> Result<(Tensor, f32)> {
+    pub fn train(&self, inputs: &Tensor, targets: &Tensor) -> Result<(Tensor, Tensor)> {
         let logits = self.forward(inputs)?;
         // logits.shape() = [4, 8, 65] = [B, T, C]
 
@@ -35,7 +43,7 @@ impl BigramModel {
         let targets = targets.reshape(Shape::from((batch_size * time_size,)))?;
 
         let loss = loss::cross_entropy(&logits, &targets)?;
-        Ok((logits, loss.to_vec0()?))
+        Ok((logits, loss))
     }
 
     /// ctxt: The current context of characters as a (B, T) array of indices.

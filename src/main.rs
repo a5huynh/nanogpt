@@ -1,4 +1,5 @@
-use candle_core::{Device, Tensor};
+use candle_core::{Device, IndexOp, Tensor};
+use candle_nn::{AdamW, Optimizer, VarBuilder};
 use dataset::Dataset;
 use rand::SeedableRng;
 
@@ -7,7 +8,7 @@ mod model;
 mod vocab;
 use vocab::Vocab;
 
-fn main() {
+fn main() -> Result<(), candle_core::Error> {
     pretty_env_logger::init();
     let device = Device::Cpu;
     let rng = rand_pcg::Pcg32::seed_from_u64(1337);
@@ -19,15 +20,36 @@ fn main() {
     dataset.print_stats();
 
     // How many independent sequences will we process in parallel
-    let batch_size = 4;
+    let batch_size = 32;
     // What is the maximum context length for predictions
     let block_size = 8;
 
-    let model = model::BigramModel::new(&device, &rng, vocab.len());
-    let (input, target) = dataset.get_batch(batch_size, block_size);
-    let (logits, loss) = model.train(&input, &target).unwrap();
-    dbg!(logits.shape());
-    dbg!(loss);
+    let mut model = model::BigramModel::new(&device, &rng, vocab.len());
+    let mut optimizer = AdamW::new_lr(model.parameters.all_vars(), 1e-3)?;
+
+    for step in 0..10000 {
+        // sample a batch of data
+        let (input, target) = dataset.get_batch(batch_size, block_size);
+        // evaluate the loss
+        let (_, loss) = model.train(&input, &target)?;
+        // Combines loss.backward() & optimizer.step() from pytorch.
+        optimizer.backward_step(&loss)?;
+        let loss = loss.to_vec0::<f32>()?;
+        if step % 100 == 0 {
+            log::debug!("Loss = {loss} @ step {step}");
+        }
+    }
+
+    // Use the trained model to generate some text
+    log::info!("Testing model, generating a string...");
+    let start = Tensor::zeros((1, 1), candle_core::DType::I64, &device)?;
+    let generated = model.generate(&start, 100)?;
+    let generated = generated.i((0, ..)).unwrap().to_vec1::<i64>()?;
+    let generated = generated.iter().map(|x| *x as u32).collect::<Vec<_>>();
+    let decoded = vocab.decode(&generated).iter().collect::<String>();
+    log::info!("Generated: {decoded}");
+
+    Ok(())
 }
 
 
