@@ -15,13 +15,13 @@ use vocab::Vocab;
 
 pub const BATCH_SIZE: usize = 32; // B
 pub const BLOCK_SIZE: usize = 8; // T
-// Number of embedding dimensions
+                                 // Number of embedding dimensions
 pub const NUM_EMBED: usize = 32; // C
 pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
 
 fn main() -> Result<(), candle_core::Error> {
     // Default to info logging if nothing is set.
-    if let Err(_) = std::env::var("RUST_LOG") {
+    if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
     }
 
@@ -42,14 +42,10 @@ fn main() -> Result<(), candle_core::Error> {
             println!("Generating things");
             Ok(())
         }
-        Some(Commands::Train { num_steps}) => run_training(
-            num_steps.unwrap_or(DEFAULT_TRAINING_STEPS),
-            &device,
-            &rng
-        ),
-        None => {
-            Ok(())
+        Some(Commands::Train { num_steps }) => {
+            run_training(num_steps.unwrap_or(DEFAULT_TRAINING_STEPS), &device, &rng)
         }
+        None => Ok(()),
     }
 }
 
@@ -85,8 +81,8 @@ fn load_dataset(device: &Device) -> (Vocab, Tensor) {
     let vocab = Vocab::from_content(&contents);
     let data = Tensor::new(vocab.encode(&contents), device).expect("Unable to create tensor");
     let data = data
-        .to_dtype(candle_core::DType::I64)
-        .expect("Unable to cast to I64");
+        .to_dtype(candle_core::DType::U32)
+        .expect("Unable to cast to U32");
     (vocab, data)
 }
 

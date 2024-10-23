@@ -7,7 +7,7 @@ pub enum Commands {
     /// Train model from scratch, saving the model to <models/latest.bin>
     Train {
         #[arg(short, long)]
-        num_steps: Option<usize>
+        num_steps: Option<usize>,
     },
 }
 
