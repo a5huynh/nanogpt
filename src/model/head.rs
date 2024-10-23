@@ -44,7 +44,8 @@ impl Head {
 
 impl Module for Head {
     fn forward(&self, input: &candle_core::Tensor) -> Result<Tensor> {
-        let (_, _, channels) = input.shape().dims3()?;
+        let (_, block_size, channels) = input.shape().dims3()?;
+
         let k = self.key.forward(input)?; // (B, T, 16)
         let q = self.query.forward(input)?;
         // Calculate the attention scores, aka the "affinities"
@@ -54,13 +55,43 @@ impl Module for Head {
         let scores = q.matmul(&k.transpose(D::Minus2, D::Minus1)?)?;
         // Scales by 1 / sqrt(head_size))
         // The weights are normalized so that variance is keep around 1.
-        let scores = (scores * (channels as f64).powf(-0.5))?;
+        let mut scores = (scores * (channels as f64).powf(-0.5))?;
         // Ignore future positions
-        let mask = self.mask.broadcast_as(scores.shape())?;
-        let scores = utils::masked_fill(&scores, &mask, f32::NEG_INFINITY, &self.device)?;
+        if block_size > BLOCK_SIZE {
+            let mask = self.mask.broadcast_as(scores.shape())?;
+            scores = utils::masked_fill(&scores, &mask, f32::NEG_INFINITY, &self.device)?;
+        }
         let scores = softmax_last_dim(&scores)?;
         // Weighted aggregation of the values.
         let v = self.value.forward(input)?;
         scores.matmul(&v)
+    }
+}
+
+pub struct MultiHeadAttention {
+    heads: Vec<Head>,
+}
+
+impl MultiHeadAttention {
+    pub fn new(head_size: usize, num_heads: usize, device: &Device) -> Self {
+        let heads = (0..num_heads)
+            .map(|_| Head::new(head_size, device))
+            .collect::<Vec<_>>();
+
+        Self { heads }
+    }
+}
+
+impl Module for MultiHeadAttention {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        Tensor::cat(
+            &self
+                .heads
+                .iter()
+                .map(|head| head.forward(xs).unwrap())
+                .collect::<Vec<_>>(),
+            // Concat on the channel dimension
+            D::Minus1,
+        )
     }
 }

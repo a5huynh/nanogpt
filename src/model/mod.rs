@@ -1,9 +1,9 @@
 use candle_core::{DType, Device, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss, ops::softmax_last_dim, Embedding, Linear, Module, VarBuilder,
-    VarMap,
+    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, Activation, Embedding, Linear,
+    Module, Sequential, VarBuilder, VarMap,
 };
-use head::Head;
+use head::MultiHeadAttention;
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
@@ -11,10 +11,36 @@ use crate::{BLOCK_SIZE, NUM_EMBED};
 
 pub mod head;
 
+// Simple multi-layer perceptron
+pub struct FeedForward {
+    net: Sequential,
+}
+
+impl FeedForward {
+    pub fn new(var_builder: VarBuilder) -> Self {
+        let net = seq()
+            .add(
+                linear_no_bias(NUM_EMBED, NUM_EMBED, var_builder.push_prefix("linear1"))
+                    .expect("Unable to create linear layer"),
+            )
+            .add(Activation::Relu);
+
+        Self { net }
+    }
+}
+
+impl Module for FeedForward {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        self.net.forward(xs)
+    }
+}
+
 pub struct BigramModel {
     token_embedding_table: Embedding,
     position_embedding_table: Embedding,
     lm_head: Linear,
+    self_attention_head: MultiHeadAttention,
+    feed_forward: FeedForward,
     device: Device,
     rng: Lcg64Xsh32,
     pub parameters: VarMap,
@@ -26,14 +52,23 @@ impl BigramModel {
         let var_map = VarMap::new();
         let var_builder = VarBuilder::from_varmap(&var_map, DType::F32, device);
 
-        let lm_head = linear_no_bias(vocab_size, NUM_EMBED, var_builder.push_prefix("lm"))
-            .expect("Unable to create lm_head layer");
+        // Each token directly reads off the logits for the next token from a lookup table.
         let token_embedding_table =
             embedding(vocab_size, NUM_EMBED, var_builder.push_prefix("token"))
                 .expect("Unable to create token_embedding_table");
+
         let position_embedding_table =
             embedding(BLOCK_SIZE, NUM_EMBED, var_builder.push_prefix("position"))
                 .expect("Unable to create position_embedding_table");
+
+        let lm_head = linear_no_bias(NUM_EMBED, vocab_size, var_builder.push_prefix("lm"))
+            .expect("Unable to create lm_head layer");
+
+        let feed_forward = FeedForward::new(var_builder.push_prefix("feed_forward"));
+
+        // 4 heads of 8-dimensional self-attention.
+        // Each communication channel and then concatenated together.
+        let self_attention_head = MultiHeadAttention::new(NUM_EMBED / 4, 4, device);
 
         Self {
             token_embedding_table,
@@ -42,28 +77,23 @@ impl BigramModel {
             rng: rng.clone(),
             parameters: var_map,
             lm_head,
+            self_attention_head,
+            feed_forward,
         }
     }
 
     pub fn train(&self, inputs: &Tensor, targets: &Tensor) -> Result<(Tensor, Tensor)> {
-        let (batch_size, time_size, vocab_size) = inputs.shape().dims3()?;
+        let logits = self.forward(inputs)?;
+        // dbg!(logits.shape()); // shape = [B, T, vocab_size]
 
-        // each token directly reads off the logits for the next token from a lookup table.
-        let tok_embed = self.token_embedding_table.forward(inputs)?;
+        log::debug!("reshaping logits");
+        let (batch_size, time_size, channels_size) = logits.shape().dims3()?;
+        let logits = logits.reshape(Shape::from((batch_size * time_size, channels_size)))?;
 
-        // encode the positions of each token
-        let positions = Tensor::arange::<f32>(0f32, time_size as f32, &self.device)?;
-        let pos_embed = self.position_embedding_table.forward(&positions);
-
-        let x = (tok_embed + pos_embed)?;
-        let logits = self.lm_head.forward(&x)?;
-        // logits.shape() = [4, 8, 65] = [B, T, C]
-
-        // dbg!(logits.shape()); = [32, 65]
-        let logits = logits.reshape(Shape::from((batch_size * time_size, vocab_size)))?;
         // dbg!(targets.shape()); = [32]
         let targets = targets.reshape(Shape::from((batch_size * time_size,)))?;
 
+        log::debug!("applying cross entropy");
         let loss = loss::cross_entropy(&logits, &targets)?;
         Ok((logits, loss))
     }
@@ -75,9 +105,18 @@ impl BigramModel {
         log::info!("Starting shape: {:?}", ctxt.shape());
 
         let mut ctxt = ctxt.clone();
+
         // get predictions
         for _ in 0..max_new_tokens {
-            let logits = self.forward(&ctxt)?;
+            // Crop to the last BLOCK_SIZE tokens.
+            let (_, block) = ctxt.shape().dims2()?;
+            let cropped = if block > BLOCK_SIZE {
+                ctxt.i((.., block - BLOCK_SIZE..))?
+            } else {
+                ctxt.clone()
+            };
+
+            let logits = self.forward(&cropped)?;
             // focus only on the last time step
             let (_, last, _) = logits.shape().dims3()?;
             let logits = logits.i((.., last - 1, ..))?; // Becomes [B, C]
@@ -115,6 +154,24 @@ impl BigramModel {
 
 impl Module for BigramModel {
     fn forward(&self, input: &Tensor) -> Result<Tensor> {
-        self.token_embedding_table.forward(input)
+        let (_, time_size) = input.shape().dims2()?;
+        // each token directly reads off the logits for the next token from a lookup table.
+        log::debug!("encoding embeddings");
+        let tok_embed = self.token_embedding_table.forward(input)?; // shape = [B, T, C]
+
+        // encode the positions of each token
+        log::debug!("encoding positions");
+        let positions = Tensor::arange::<u32>(0, time_size as u32, &self.device)?;
+        let pos_embed = self.position_embedding_table.forward(&positions)?; // shape = [T, C]
+
+        // Vector with encoded tokens & positions
+        let x = tok_embed.broadcast_add(&pos_embed)?;
+        // Appply a single head of self-attention.
+        log::debug!("applying self-attention");
+        let x = self.self_attention_head.forward(&x)?; // shape = [B, T, C];
+        let x = self.feed_forward.forward(&x)?; // shape = [B, T, C];
+
+        log::debug!("applying lm_head");
+        self.lm_head.forward(&x)
     }
 }

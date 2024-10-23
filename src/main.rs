@@ -1,4 +1,4 @@
-use candle_core::{Device, IndexOp, Tensor};
+use candle_core::{backend::BackendDevice, Device, IndexOp, MetalDevice, Tensor};
 use candle_nn::{AdamW, Module, Optimizer};
 use clap::Parser;
 use cli::Commands;
@@ -14,18 +14,23 @@ mod utils;
 mod vocab;
 use vocab::Vocab;
 
-pub const BATCH_SIZE: usize = 32;
-pub const BLOCK_SIZE: usize = 8;
+pub const BATCH_SIZE: usize = 32; // B
+pub const BLOCK_SIZE: usize = 8; // T
 // Number of embedding dimensions
-pub const NUM_EMBED: usize = 32;
+pub const NUM_EMBED: usize = 32; // C
+pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
 
 fn main() -> Result<(), candle_core::Error> {
     // Initialize stuff
     pretty_env_logger::init();
     let args = cli::Args::parse();
 
-    // let device = Device::Metal(MetalDevice::new(0)?);
-    let device = Device::Cpu;
+    let device = if args.gpu {
+        Device::Metal(MetalDevice::new(0)?)
+    } else {
+        Device::Cpu
+    };
+
     let rng = rand_pcg::Pcg32::seed_from_u64(1337);
 
     match &args.subcommand {
@@ -33,15 +38,22 @@ fn main() -> Result<(), candle_core::Error> {
             println!("Generating things");
             Ok(())
         }
-        Some(Commands::Train) => run_training(&device, &rng),
+        Some(Commands::Train { num_steps}) => run_training(
+            num_steps.unwrap_or(DEFAULT_TRAINING_STEPS),
+            &device,
+            &rng
+        ),
         None => {
-
             Ok(())
         }
     }
 }
 
-fn run_training(device: &Device, rng: &RngType) -> Result<(), candle_core::Error> {
+fn run_training(
+    num_steps: usize,
+    device: &Device,
+    rng: &RngType,
+) -> Result<(), candle_core::Error> {
     // Load dataset & start training
     let (vocab, data) = load_dataset(device);
     log::info!("Vocab [{} chars] | {vocab}", vocab.len());
@@ -50,7 +62,7 @@ fn run_training(device: &Device, rng: &RngType) -> Result<(), candle_core::Error
     dataset.print_stats();
 
     let mut model = model::BigramModel::new(device, rng, vocab.len());
-    train_simple_bigram_model(&mut dataset, &mut model, BATCH_SIZE, BLOCK_SIZE, 10_000)?;
+    train_simple_bigram_model(&mut dataset, &mut model, BATCH_SIZE, BLOCK_SIZE, num_steps)?;
 
     // Use the trained model to generate some text
     log::info!("Testing model, generating a string...");
@@ -94,7 +106,7 @@ fn train_simple_bigram_model(
         optimizer.backward_step(&loss)?;
         let loss = loss.to_vec0::<f32>()?;
         if step % 100 == 0 {
-            log::debug!("Loss = {loss} @ step {step}");
+            log::info!("Loss = {loss} @ step {step}");
         }
     }
 
