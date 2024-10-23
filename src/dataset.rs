@@ -41,6 +41,32 @@ impl Dataset {
         self.validation_len
     }
 
+    pub fn get_validation_batch(
+        &mut self,
+        batch_size: usize,
+        block_size: usize,
+    ) -> (Tensor, Tensor) {
+        let batch_range: Vec<usize> = (0..batch_size)
+            .map(|_| self.rng.gen_range(0..self.validation_len - block_size))
+            .collect();
+
+        let inputs = batch_range.iter().map(|batch_start| {
+            self.validation
+                .i((*batch_start..batch_start + block_size,))
+                .unwrap()
+        });
+
+        let targets = batch_range.iter().map(|batch_start| {
+            let t_start = batch_start + 1;
+            self.validation.i((t_start..t_start + block_size,)).unwrap()
+        });
+
+        (
+            Tensor::stack(&inputs.collect::<Vec<_>>(), 0).unwrap(),
+            Tensor::stack(&targets.collect::<Vec<_>>(), 0).unwrap(),
+        )
+    }
+
     /// Generate a small batch of data of (inputs, targets)
     pub fn get_batch(&mut self, batch_size: usize, block_size: usize) -> (Tensor, Tensor) {
         let batch_range: Vec<usize> = (0..batch_size)

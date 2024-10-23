@@ -1,15 +1,26 @@
 use candle_core::{DType, Device, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, Activation, Embedding, Linear,
-    Module, Sequential, VarBuilder, VarMap,
+    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, Activation, AdamW, Embedding,
+    Linear, Module, Optimizer, Sequential, VarBuilder, VarMap,
 };
 use head::MultiHeadAttention;
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
-use crate::{BLOCK_SIZE, NUM_EMBED};
+use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, NUM_EMBED};
 
 pub mod head;
+
+pub fn estimate_loss(logits: &Tensor, targets: &Tensor) -> Result<Tensor> {
+    log::debug!("reshaping logits");
+    let (batch_size, time_size, channels_size) = logits.shape().dims3()?;
+    let logits = logits.reshape(Shape::from((batch_size * time_size, channels_size)))?;
+
+    let targets = targets.reshape(Shape::from((batch_size * time_size,)))?;
+
+    log::debug!("applying cross entropy");
+    loss::cross_entropy(&logits, &targets)
+}
 
 /// Transformer block: communication followed by computation.
 pub struct Block {
@@ -40,12 +51,13 @@ impl Block {
 
 impl Module for Block {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        let x = self.attention.forward(xs)?;
-        self.feed_forward.forward(&x)
+        let x = (xs + self.attention.forward(xs)?)?;
+        x.clone() + self.feed_forward.forward(&x)?
     }
 }
 
-// Simple multi-layer perceptron
+/// Simple multi-layer perceptron
+/// Implementation of the position-wise feed-forward network in the transformer paper.
 pub struct FeedForward {
     net: Sequential,
 }
@@ -54,10 +66,18 @@ impl FeedForward {
     pub fn new(num_embed: usize, var_builder: VarBuilder) -> Self {
         let net = seq()
             .add(
-                linear_no_bias(num_embed, num_embed, var_builder.push_prefix("linear1"))
+                linear_no_bias(num_embed, 4 * num_embed, var_builder.push_prefix("linear1"))
                     .expect("Unable to create linear layer"),
             )
-            .add(Activation::Relu);
+            .add(Activation::Relu)
+            .add(
+                linear_no_bias(
+                    4 * num_embed,
+                    num_embed,
+                    var_builder.push_prefix("projection"),
+                )
+                .expect("Unable to create linear layer"),
+            );
 
         Self { net }
     }
@@ -134,20 +154,28 @@ impl BigramModel {
         }
     }
 
-    pub fn train(&self, inputs: &Tensor, targets: &Tensor) -> Result<(Tensor, Tensor)> {
-        let logits = self.forward(inputs)?;
-        // dbg!(logits.shape()); // shape = [B, T, vocab_size]
+    pub fn train(&self, dataset: &mut Dataset, num_steps: usize) -> Result<()> {
+        let mut optimizer = AdamW::new_lr(self.parameters.all_vars(), 1e-3)?;
 
-        log::debug!("reshaping logits");
-        let (batch_size, time_size, channels_size) = logits.shape().dims3()?;
-        let logits = logits.reshape(Shape::from((batch_size * time_size, channels_size)))?;
+        for step in 0..num_steps {
+            // sample a batch of data
+            let (input, target) = dataset.get_batch(BATCH_SIZE, BLOCK_SIZE);
+            // evaluate the loss
+            let logits = self.forward(&input)?;
+            let loss = estimate_loss(&logits, &target)?;
+            // Combines loss.backward() & optimizer.step() from pytorch.
+            optimizer.backward_step(&loss)?;
+            if step % 100 == 0 {
+                let train_loss = loss.to_scalar::<f32>()?;
+                let (val_input, val_target) = dataset.get_validation_batch(BATCH_SIZE, BLOCK_SIZE);
+                let val_logits = self.forward(&val_input)?;
+                let val_loss = estimate_loss(&val_logits, &val_target)?
+                    .to_scalar::<f32>()?;
+                log::info!("step {step} - train loss = {train_loss}, val loss = {val_loss}");
+            }
+        }
 
-        // dbg!(targets.shape()); = [32]
-        let targets = targets.reshape(Shape::from((batch_size * time_size,)))?;
-
-        log::debug!("applying cross entropy");
-        let loss = loss::cross_entropy(&logits, &targets)?;
-        Ok((logits, loss))
+        Ok(())
     }
 
     /// ctxt: The current context of characters as a (B, T) array of indices.
@@ -196,7 +224,7 @@ impl BigramModel {
             }
             // Append the sampled index to the running sequence.
             let samples = Tensor::new(samples, &self.device)?;
-            let samples = samples.reshape((num_batches, 1))?;
+            let samples = samples.reshape((num_batches, 1))?.to_dtype(DType::U32)?;
             ctxt = Tensor::cat(&[&ctxt, &samples], 1)?;
         }
 

@@ -1,5 +1,5 @@
 use candle_core::{Device, Result, Tensor, D};
-use candle_nn::{ops::softmax_last_dim, Linear, Module, VarBuilder};
+use candle_nn::{linear_no_bias, ops::softmax_last_dim, Linear, Module, VarBuilder};
 
 use crate::{utils, BLOCK_SIZE, NUM_EMBED};
 
@@ -63,8 +63,10 @@ impl Module for Head {
     }
 }
 
+/// Multiple heads of attention applied in parallel
 pub struct MultiHeadAttention {
     heads: Vec<Head>,
+    projection: Linear,
 }
 
 impl MultiHeadAttention {
@@ -84,13 +86,17 @@ impl MultiHeadAttention {
             })
             .collect::<Vec<_>>();
 
-        Self { heads }
+        let projection =
+            linear_no_bias(NUM_EMBED, NUM_EMBED, var_builder.push_prefix("projection"))
+                .expect("Unable to create projection layer");
+
+        Self { heads, projection }
     }
 }
 
 impl Module for MultiHeadAttention {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        Tensor::cat(
+        let out = Tensor::cat(
             &self
                 .heads
                 .iter()
@@ -98,6 +104,8 @@ impl Module for MultiHeadAttention {
                 .collect::<Vec<_>>(),
             // Concat on the channel dimension
             D::Minus1,
-        )
+        )?;
+
+        self.projection.forward(&out)
     }
 }

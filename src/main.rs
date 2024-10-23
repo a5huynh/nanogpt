@@ -1,8 +1,6 @@
 use candle_core::{backend::BackendDevice, Device, IndexOp, MetalDevice, Tensor};
-use candle_nn::{AdamW, Optimizer};
 use clap::Parser;
 use cli::Commands;
-use core::f32;
 use dataset::{Dataset, RngType};
 use rand::SeedableRng;
 
@@ -61,14 +59,13 @@ fn run_training(
     dataset.print_stats();
 
     let mut model = model::BigramModel::new(device, rng, vocab.len());
-    train_simple_bigram_model(&mut dataset, &mut model, BATCH_SIZE, BLOCK_SIZE, num_steps)?;
+    model.train(&mut dataset, num_steps)?;
 
     // Use the trained model to generate some text
     log::info!("Testing model, generating a string...");
-    let start = Tensor::zeros((1, 1), candle_core::DType::I64, device)?;
+    let start = Tensor::zeros((1, 1), candle_core::DType::U32, device)?;
     let generated = model.generate(&start, 100)?;
-    let generated = generated.i((0, ..)).unwrap().to_vec1::<i64>()?;
-    let generated = generated.iter().map(|x| *x as u32).collect::<Vec<_>>();
+    let generated = generated.i((0, ..)).unwrap().to_vec1::<u32>()?;
     let decoded = vocab.decode(&generated).iter().collect::<String>();
     log::info!("Generated: {decoded}");
 
@@ -83,33 +80,6 @@ fn load_dataset(device: &Device) -> (Vocab, Tensor) {
         .to_dtype(candle_core::DType::U32)
         .expect("Unable to cast to U32");
     (vocab, data)
-}
-
-fn train_simple_bigram_model(
-    dataset: &mut Dataset,
-    model: &mut model::BigramModel,
-    // How many independent sequences will we process in parallel
-    batch_size: usize,
-    // What is the maximum context length for predictions
-    block_size: usize,
-    num_steps: usize,
-) -> Result<(), candle_core::Error> {
-    let mut optimizer = AdamW::new_lr(model.parameters.all_vars(), 1e-3)?;
-
-    for step in 0..num_steps {
-        // sample a batch of data
-        let (input, target) = dataset.get_batch(batch_size, block_size);
-        // evaluate the loss
-        let (_, loss) = model.train(&input, &target)?;
-        // Combines loss.backward() & optimizer.step() from pytorch.
-        optimizer.backward_step(&loss)?;
-        let loss = loss.to_vec0::<f32>()?;
-        if step % 100 == 0 {
-            log::info!("Loss = {loss} @ step {step}");
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
