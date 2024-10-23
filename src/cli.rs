@@ -1,0 +1,16 @@
+use clap::{Parser, Subcommand};
+
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Generate text based on a trained model. Defaults to <models/latest.bin>
+    Generate,
+    /// Train model from scratch, saving the model to <models/latest.bin>
+    Train,
+}
+
+#[derive(Parser)]
+#[command(version, about)]
+pub struct Args {
+    #[command(subcommand)]
+    pub subcommand: Option<Commands>,
+}

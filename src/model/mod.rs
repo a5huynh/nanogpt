@@ -1,10 +1,17 @@
 use candle_core::{DType, Device, IndexOp, Result, Shape, Tensor};
-use candle_nn::{loss, ops::softmax_last_dim, Embedding, Module, VarBuilder, VarMap};
+use candle_nn::{
+    embedding, linear_no_bias, loss, ops::softmax_last_dim, Embedding, Linear, Module, VarBuilder,
+    VarMap,
+};
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
+use crate::{BLOCK_SIZE, NUM_EMBED};
+
 pub struct BigramModel {
     token_embedding_table: Embedding,
+    position_embedding_table: Embedding,
+    lm_head: Linear,
     device: Device,
     rng: Lcg64Xsh32,
     pub parameters: VarMap,
@@ -15,25 +22,38 @@ impl BigramModel {
         // Similar to nn.Parameter in pytorch.
         let var_map = VarMap::new();
         let var_builder = VarBuilder::from_varmap(&var_map, DType::F32, device);
-        let embedding = var_builder
-            .get((vocab_size, vocab_size), "embeddings")
-            .unwrap();
 
-        let embedding = Embedding::new(embedding, vocab_size);
+        let lm_head = linear_no_bias(vocab_size, NUM_EMBED, var_builder.push_prefix("lm"))
+            .expect("Unable to create lm_head layer");
+        let token_embedding_table =
+            embedding(vocab_size, NUM_EMBED, var_builder.push_prefix("token"))
+                .expect("Unable to create token_embedding_table");
+        let position_embedding_table =
+            embedding(BLOCK_SIZE, NUM_EMBED, var_builder.push_prefix("position"))
+                .expect("Unable to create position_embedding_table");
 
         Self {
-            token_embedding_table: embedding,
+            token_embedding_table,
+            position_embedding_table,
             device: device.clone(),
             rng: rng.clone(),
             parameters: var_map,
+            lm_head,
         }
     }
 
     pub fn train(&self, inputs: &Tensor, targets: &Tensor) -> Result<(Tensor, Tensor)> {
-        let logits = self.forward(inputs)?;
-        // logits.shape() = [4, 8, 65] = [B, T, C]
+        let (batch_size, time_size, channel_size) = inputs.shape().dims3()?;
 
-        let (batch_size, time_size, channel_size) = logits.shape().dims3()?;
+        // each token directly reads off the logits for the next token from a lookup table.
+        let tok_embed = self.token_embedding_table.forward(inputs)?;
+
+        let positions = Tensor::arange::<f32>(0f32, time_size as f32, &self.device)?;
+        let pos_embed = self.position_embedding_table.forward(&positions);
+
+        let x = (tok_embed + pos_embed)?;
+        let logits = self.lm_head.forward(&x)?;
+        // logits.shape() = [4, 8, 65] = [B, T, C]
 
         // dbg!(logits.shape()); = [32, 65]
         let logits = logits.reshape(Shape::from((batch_size * time_size, channel_size)))?;

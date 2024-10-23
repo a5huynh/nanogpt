@@ -2,16 +2,18 @@ use candle_core::{IndexOp, Tensor};
 use rand::Rng;
 use rand_pcg::Lcg64Xsh32;
 
+pub type RngType = Lcg64Xsh32;
+
 pub struct Dataset {
     pub training: Tensor,
     pub validation: Tensor,
     training_len: usize,
     validation_len: usize,
-    rng: Lcg64Xsh32,
+    rng: RngType,
 }
 
 impl Dataset {
-    pub fn new(rng: &Lcg64Xsh32, data: &Tensor) -> Self {
+    pub fn new(rng: &RngType, data: &Tensor) -> Self {
         let data_len = data.elem_count();
         let split = (0.9 * data_len as f64).trunc() as usize;
 

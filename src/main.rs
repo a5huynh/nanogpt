@@ -1,26 +1,54 @@
-use candle_core::{Device, IndexOp, Tensor};
-use candle_nn::{AdamW, Optimizer};
-use dataset::Dataset;
+use candle_core::{DType, Device, IndexOp, Tensor, D};
+use candle_nn::{ops::softmax_last_dim, AdamW, Module, Optimizer, VarBuilder, VarMap};
+use clap::Parser;
+use cli::Commands;
+use core::f32;
+use dataset::{Dataset, RngType};
 use rand::SeedableRng;
 
+mod cli;
 mod dataset;
 mod model;
+mod utils;
 mod vocab;
 use vocab::Vocab;
 
+pub const BATCH_SIZE: usize = 32;
+pub const BLOCK_SIZE: usize = 8;
+pub const NUM_EMBED: usize = 32;
+
 fn main() -> Result<(), candle_core::Error> {
+    // Initialize stuff
     pretty_env_logger::init();
+    let args = cli::Args::parse();
+
+    // let device = Device::Metal(MetalDevice::new(0)?);
     let device = Device::Cpu;
     let rng = rand_pcg::Pcg32::seed_from_u64(1337);
 
-    let (vocab, data) = load_dataset(&device);
+    match &args.subcommand {
+        Some(Commands::Generate) => {
+            println!("Generating things");
+            Ok(())
+        }
+        Some(Commands::Train) => run_training(&device, &rng),
+        None => {
+
+            Ok(())
+        }
+    }
+}
+
+fn run_training(device: &Device, rng: &RngType) -> Result<(), candle_core::Error> {
+    // Load dataset & start training
+    let (vocab, data) = load_dataset(device);
     log::info!("Vocab [{} chars] | {vocab}", vocab.len());
 
-    let mut dataset = Dataset::new(&rng, &data);
+    let mut dataset = Dataset::new(rng, &data);
     dataset.print_stats();
 
-    let mut model = model::BigramModel::new(&device, &rng, vocab.len());
-    train_simple_bigram_model(&mut dataset, &mut model, 32, 8, 10_000)?;
+    let mut model = model::BigramModel::new(device, rng, vocab.len());
+    train_simple_bigram_model(&mut dataset, &mut model, BATCH_SIZE, BLOCK_SIZE, 10_000)?;
 
     // Use the trained model to generate some text
     log::info!("Testing model, generating a string...");
