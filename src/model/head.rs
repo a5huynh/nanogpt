@@ -1,5 +1,5 @@
-use candle_core::{DType, Device, Result, Tensor, D};
-use candle_nn::{ops::softmax_last_dim, Linear, Module, VarBuilder, VarMap};
+use candle_core::{Device, Result, Tensor, D};
+use candle_nn::{ops::softmax_last_dim, Linear, Module, VarBuilder};
 
 use crate::{utils, BLOCK_SIZE, NUM_EMBED};
 
@@ -9,14 +9,10 @@ pub struct Head {
     value: Linear,
     mask: Tensor,
     device: Device,
-    _parameters: VarMap,
 }
 
 impl Head {
-    pub fn new(head_size: usize, device: &Device) -> Self {
-        let var_map = VarMap::new();
-        let var_builder = VarBuilder::from_varmap(&var_map, DType::F32, device);
-
+    pub fn new(head_size: usize, device: &Device, var_builder: VarBuilder) -> Self {
         // what do i contain?
         let key = candle_nn::linear_no_bias(NUM_EMBED, head_size, var_builder.push_prefix("key"))
             .expect("Unable to create key layer");
@@ -37,7 +33,6 @@ impl Head {
             value,
             mask,
             device: device.clone(),
-            _parameters: var_map,
         }
     }
 }
@@ -73,9 +68,20 @@ pub struct MultiHeadAttention {
 }
 
 impl MultiHeadAttention {
-    pub fn new(head_size: usize, num_heads: usize, device: &Device) -> Self {
+    pub fn new(
+        head_size: usize,
+        num_heads: usize,
+        device: &Device,
+        var_builder: VarBuilder,
+    ) -> Self {
         let heads = (0..num_heads)
-            .map(|_| Head::new(head_size, device))
+            .map(|idx| {
+                Head::new(
+                    head_size,
+                    device,
+                    var_builder.push_prefix(format!("head_{idx}")),
+                )
+            })
             .collect::<Vec<_>>();
 
         Self { heads }

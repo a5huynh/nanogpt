@@ -11,16 +11,50 @@ use crate::{BLOCK_SIZE, NUM_EMBED};
 
 pub mod head;
 
+/// Transformer block: communication followed by computation.
+pub struct Block {
+    attention: MultiHeadAttention,
+    feed_forward: FeedForward,
+}
+
+impl Block {
+    pub fn new(
+        num_embeddings: usize,
+        num_heads: usize,
+        device: &Device,
+        var_builder: VarBuilder,
+    ) -> Self {
+        let head_size = num_embeddings / num_heads;
+
+        Self {
+            attention: MultiHeadAttention::new(
+                head_size,
+                num_heads,
+                device,
+                var_builder.push_prefix("attention"),
+            ),
+            feed_forward: FeedForward::new(num_embeddings, var_builder.push_prefix("ffwd")),
+        }
+    }
+}
+
+impl Module for Block {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        let x = self.attention.forward(xs)?;
+        self.feed_forward.forward(&x)
+    }
+}
+
 // Simple multi-layer perceptron
 pub struct FeedForward {
     net: Sequential,
 }
 
 impl FeedForward {
-    pub fn new(var_builder: VarBuilder) -> Self {
+    pub fn new(num_embed: usize, var_builder: VarBuilder) -> Self {
         let net = seq()
             .add(
-                linear_no_bias(NUM_EMBED, NUM_EMBED, var_builder.push_prefix("linear1"))
+                linear_no_bias(num_embed, num_embed, var_builder.push_prefix("linear1"))
                     .expect("Unable to create linear layer"),
             )
             .add(Activation::Relu);
@@ -39,8 +73,7 @@ pub struct BigramModel {
     token_embedding_table: Embedding,
     position_embedding_table: Embedding,
     lm_head: Linear,
-    self_attention_head: MultiHeadAttention,
-    feed_forward: FeedForward,
+    blocks: Sequential,
     device: Device,
     rng: Lcg64Xsh32,
     pub parameters: VarMap,
@@ -61,24 +94,43 @@ impl BigramModel {
             embedding(BLOCK_SIZE, NUM_EMBED, var_builder.push_prefix("position"))
                 .expect("Unable to create position_embedding_table");
 
+        let blocks = seq()
+            .add(Block::new(
+                NUM_EMBED,
+                4,
+                device,
+                var_builder.push_prefix("block_0"),
+            ))
+            .add(Block::new(
+                NUM_EMBED,
+                4,
+                device,
+                var_builder.push_prefix("block_1"),
+            ))
+            .add(Block::new(
+                NUM_EMBED,
+                4,
+                device,
+                var_builder.push_prefix("block_2"),
+            ))
+            .add(Block::new(
+                NUM_EMBED,
+                4,
+                device,
+                var_builder.push_prefix("block_3"),
+            ));
+
         let lm_head = linear_no_bias(NUM_EMBED, vocab_size, var_builder.push_prefix("lm"))
             .expect("Unable to create lm_head layer");
-
-        let feed_forward = FeedForward::new(var_builder.push_prefix("feed_forward"));
-
-        // 4 heads of 8-dimensional self-attention.
-        // Each communication channel and then concatenated together.
-        let self_attention_head = MultiHeadAttention::new(NUM_EMBED / 4, 4, device);
 
         Self {
             token_embedding_table,
             position_embedding_table,
+            blocks,
             device: device.clone(),
             rng: rng.clone(),
             parameters: var_map,
             lm_head,
-            self_attention_head,
-            feed_forward,
         }
     }
 
@@ -167,9 +219,8 @@ impl Module for BigramModel {
         // Vector with encoded tokens & positions
         let x = tok_embed.broadcast_add(&pos_embed)?;
         // Appply a single head of self-attention.
-        log::debug!("applying self-attention");
-        let x = self.self_attention_head.forward(&x)?; // shape = [B, T, C];
-        let x = self.feed_forward.forward(&x)?; // shape = [B, T, C];
+        log::debug!("applying transformer blocks");
+        let x = self.blocks.forward(&x)?; // shape = [B, T, C];
 
         log::debug!("applying lm_head");
         self.lm_head.forward(&x)

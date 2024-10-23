@@ -14,9 +14,8 @@ mod vocab;
 use vocab::Vocab;
 
 pub const BATCH_SIZE: usize = 32; // B
-pub const BLOCK_SIZE: usize = 8; // T
-                                 // Number of embedding dimensions
-pub const NUM_EMBED: usize = 32; // C
+pub const BLOCK_SIZE: usize = 8; // T, "time" dimension.
+pub const NUM_EMBED: usize = 32; // C, Number of embedding dimensions
 pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
 
 fn main() -> Result<(), candle_core::Error> {
