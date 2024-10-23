@@ -1,10 +1,9 @@
 use candle_core::{backend::BackendDevice, Device, IndexOp, MetalDevice, Tensor};
-use candle_nn::{AdamW, Module, Optimizer};
+use candle_nn::{AdamW, Optimizer};
 use clap::Parser;
 use cli::Commands;
 use core::f32;
 use dataset::{Dataset, RngType};
-use model::head::Head;
 use rand::SeedableRng;
 
 mod cli;
@@ -21,6 +20,11 @@ pub const NUM_EMBED: usize = 32; // C
 pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
 
 fn main() -> Result<(), candle_core::Error> {
+    // Default to info logging if nothing is set.
+    if let Err(_) = std::env::var("RUST_LOG") {
+        std::env::set_var("RUST_LOG", "info");
+    }
+
     // Initialize stuff
     pretty_env_logger::init();
     let args = cli::Args::parse();
