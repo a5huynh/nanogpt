@@ -3,10 +3,13 @@ use candle_nn::{
     embedding, linear_no_bias, loss, ops::softmax_last_dim, Embedding, Linear, Module, VarBuilder,
     VarMap,
 };
+use head::Head;
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
 use crate::{BLOCK_SIZE, NUM_EMBED};
+
+pub mod head;
 
 pub struct BigramModel {
     token_embedding_table: Embedding,
@@ -43,11 +46,12 @@ impl BigramModel {
     }
 
     pub fn train(&self, inputs: &Tensor, targets: &Tensor) -> Result<(Tensor, Tensor)> {
-        let (batch_size, time_size, channel_size) = inputs.shape().dims3()?;
+        let (batch_size, time_size, vocab_size) = inputs.shape().dims3()?;
 
         // each token directly reads off the logits for the next token from a lookup table.
         let tok_embed = self.token_embedding_table.forward(inputs)?;
 
+        // encode the positions of each token
         let positions = Tensor::arange::<f32>(0f32, time_size as f32, &self.device)?;
         let pos_embed = self.position_embedding_table.forward(&positions);
 
@@ -56,7 +60,7 @@ impl BigramModel {
         // logits.shape() = [4, 8, 65] = [B, T, C]
 
         // dbg!(logits.shape()); = [32, 65]
-        let logits = logits.reshape(Shape::from((batch_size * time_size, channel_size)))?;
+        let logits = logits.reshape(Shape::from((batch_size * time_size, vocab_size)))?;
         // dbg!(targets.shape()); = [32]
         let targets = targets.reshape(Shape::from((batch_size * time_size,)))?;
 

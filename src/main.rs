@@ -1,9 +1,10 @@
-use candle_core::{DType, Device, IndexOp, Tensor, D};
-use candle_nn::{ops::softmax_last_dim, AdamW, Module, Optimizer, VarBuilder, VarMap};
+use candle_core::{Device, IndexOp, Tensor};
+use candle_nn::{AdamW, Module, Optimizer};
 use clap::Parser;
 use cli::Commands;
 use core::f32;
 use dataset::{Dataset, RngType};
+use model::head::Head;
 use rand::SeedableRng;
 
 mod cli;
@@ -15,6 +16,7 @@ use vocab::Vocab;
 
 pub const BATCH_SIZE: usize = 32;
 pub const BLOCK_SIZE: usize = 8;
+// Number of embedding dimensions
 pub const NUM_EMBED: usize = 32;
 
 fn main() -> Result<(), candle_core::Error> {
@@ -52,7 +54,7 @@ fn run_training(device: &Device, rng: &RngType) -> Result<(), candle_core::Error
 
     // Use the trained model to generate some text
     log::info!("Testing model, generating a string...");
-    let start = Tensor::zeros((1, 1), candle_core::DType::I64, &device)?;
+    let start = Tensor::zeros((1, 1), candle_core::DType::I64, device)?;
     let generated = model.generate(&start, 100)?;
     let generated = generated.i((0, ..)).unwrap().to_vec1::<i64>()?;
     let generated = generated.iter().map(|x| *x as u32).collect::<Vec<_>>();
