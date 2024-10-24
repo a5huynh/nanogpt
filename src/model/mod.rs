@@ -156,8 +156,11 @@ impl BigramModel {
     }
 
     pub fn train(&self, dataset: &mut Dataset, num_steps: usize) -> Result<()> {
-        let mut optimizer = AdamW::new_lr(self.parameters.all_vars(), LEARNING_RATE)?;
+        // setup some timers for see how efficient we are.
+        let train_start = std::time::Instant::now();
+        let mut timer = std::time::Instant::now();
 
+        let mut optimizer = AdamW::new_lr(self.parameters.all_vars(), LEARNING_RATE)?;
         for step in 0..num_steps {
             // sample a batch of data
             let (input, target) = dataset.get_batch(BATCH_SIZE, BLOCK_SIZE);
@@ -171,12 +174,19 @@ impl BigramModel {
                 let (val_input, val_target) = dataset.get_validation_batch(BATCH_SIZE, BLOCK_SIZE);
                 let val_logits = self.forward(&val_input)?;
                 let val_loss = estimate_loss(&val_logits, &val_target)?.to_scalar::<f32>()?;
+
+                let tps = (timer.elapsed().as_secs_f32() / 100.0) * 1000.0;
+                timer = std::time::Instant::now();
                 log::info!(
-                    "step {step} - train loss = {train_loss:0.3}, val loss = {val_loss:0.3}"
+                    "step {step} - train loss = {train_loss:0.3}, val loss = {val_loss:0.3}, per step: {tps:0.3}ms",
                 );
             }
         }
 
+        log::info!(
+            "total training time: {:0.3}s",
+            train_start.elapsed().as_secs_f32()
+        );
         Ok(())
     }
 

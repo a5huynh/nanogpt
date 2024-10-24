@@ -13,11 +13,15 @@ use vocab::Vocab;
 
 // pub const BATCH_SIZE: usize = 32; // B
 // pub const BLOCK_SIZE: usize = 8; // T, "time" dimension.
+//
+// pub const NUM_EMBED: usize = 32; // C, Number of embedding dimensions
+// pub const NUM_HEADS: usize = 4;
+// pub const NUM_LAYERS: usize = 4;
 
-pub const BATCH_SIZE: usize = 64; // B
-pub const BLOCK_SIZE: usize = 256; // T, "time" dimension.
+pub const BATCH_SIZE: usize = 32; // B
+pub const BLOCK_SIZE: usize = 128; // T, "time" dimension.
 
-pub const NUM_EMBED: usize = 32; // C, Number of embedding dimensions
+pub const NUM_EMBED: usize = 64; // C, Number of embedding dimensions
 pub const NUM_HEADS: usize = 4;
 pub const NUM_LAYERS: usize = 6;
 
@@ -162,7 +166,7 @@ mod test {
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
         let (vocab, _) = load_dataset(&device);
 
-        let mut model = super::model::BigramModel::new(&device, &rng, vocab.len());
+        let mut model = super::model::BigramModel::new(4, &device, &rng, vocab.len());
 
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
         let generated = model.generate(&test, 10).unwrap();
