@@ -3,7 +3,12 @@ use clap::{Parser, Subcommand};
 #[derive(Subcommand)]
 pub enum Commands {
     /// Generate text based on a trained model. Defaults to <models/latest.bin>
-    Generate,
+    Generate {
+        #[arg(short, long)]
+        prompt: Option<String>,
+        #[arg(short, long)]
+        num_tokens: Option<usize>,
+    },
     /// Train model from scratch, saving the model to <models/latest.bin>
     Train {
         #[arg(short, long)]
