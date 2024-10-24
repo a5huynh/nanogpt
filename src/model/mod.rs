@@ -130,7 +130,7 @@ impl BigramModel {
             let cropped = if block > BLOCK_SIZE {
                 ctxt.i((.., block - BLOCK_SIZE..))?
             } else {
-                ctxt.pad_with_zeros(1, BLOCK_SIZE - block, 0)?
+                ctxt.clone()
             };
 
             let logits = self.forward(&cropped)?;
