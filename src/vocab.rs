@@ -74,6 +74,9 @@ impl Vocab {
 
 #[cfg(test)]
 mod test {
+    use candle_core::Device;
+    use crate::load_dataset;
+
     #[test]
     fn test_decode() {
         let vocab = super::Vocab::new(&"0123456789".chars().collect::<Vec<_>>());
@@ -86,5 +89,17 @@ mod test {
         let vocab = super::Vocab::new(&"0123456789".chars().collect::<Vec<_>>());
         let encoded = vocab.encode("123");
         assert_eq!(encoded, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_dataset_decode() {
+        let device = Device::Cpu;
+        let (vocab, _) = load_dataset(&device);
+
+        let test_string = "HELLO world, test";
+        let encoded = vocab.encode(&test_string);
+        let decoded = vocab.decode(&encoded);
+
+        assert_eq!(test_string, decoded.iter().collect::<String>());
     }
 }

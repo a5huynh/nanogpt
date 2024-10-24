@@ -64,7 +64,7 @@ fn run_training(
     // Use the trained model to generate some text
     log::info!("Testing model, generating a string...");
     let start = Tensor::zeros((1, 1), candle_core::DType::U32, device)?;
-    let generated = model.generate(&start, 100)?;
+    let generated = model.generate(&start, 256)?;
     let generated = generated.i((0, ..)).unwrap().to_vec1::<u32>()?;
     let decoded = vocab.decode(&generated).iter().collect::<String>();
     log::info!("Generated: {decoded}");
@@ -89,6 +89,22 @@ mod test {
     use rand::SeedableRng;
 
     #[test]
+    fn test_dataset_loading() {
+        let device = Device::Cpu;
+        let rng = rand_pcg::Pcg32::seed_from_u64(1337);
+
+        let (vocab, data) = load_dataset(&device);
+        let mut dataset = Dataset::new(&rng, &data);
+
+        let (input, target) = dataset.get_validation_batch(1, 100);
+
+        let decoded = vocab.decode(&input.get(0).unwrap().to_vec1().unwrap());
+        dbg!(decoded.iter().collect::<String>());
+        let decoded = vocab.decode(&target.get(0).unwrap().to_vec1().unwrap());
+        dbg!(decoded.iter().collect::<String>());
+    }
+
+    #[test]
     fn test_batching() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
@@ -102,21 +118,25 @@ mod test {
         let block_size = 8;
 
         let (input, target) = dataset.get_batch(batch_size, block_size);
-        println!("inputs: {:?}", input.shape());
-        println!("targets: {:?}", target.shape());
-        println!("-----");
 
-        for bidx in 0..batch_size {
-            for t in 0..block_size {
-                let context = input.i((bidx, ..t + 1)).unwrap();
-                let target = target.i((bidx, t)).unwrap();
-                println!(
-                    "when input is {:?} the target: {}",
-                    context.to_vec1::<i64>().unwrap(),
-                    target.to_vec0::<i64>().unwrap()
-                );
-            }
-        }
+        let (x, y) = input.shape().dims2().unwrap();
+        assert_eq!(x, batch_size);
+        assert_eq!(y, block_size);
+
+        let (x, y) = target.shape().dims2().unwrap();
+        assert_eq!(x, batch_size);
+        assert_eq!(y, block_size);
+        // for bidx in 0..batch_size {
+        //     for t in 0..block_size {
+        //         let context = input.i((bidx, ..t + 1)).unwrap();
+        //         let target = target.i((bidx, t)).unwrap();
+        //         println!(
+        //             "when input is {:?} the target: {}",
+        //             context.to_vec1::<u32>().unwrap(),
+        //             target.to_vec0::<u32>().unwrap()
+        //         );
+        //     }
+        // }
     }
 
     #[test]
@@ -127,10 +147,9 @@ mod test {
 
         let mut model = super::model::BigramModel::new(&device, &rng, vocab.len());
 
-        let test = Tensor::zeros((1, 1), candle_core::DType::I64, &device).unwrap();
+        let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
         let generated = model.generate(&test, 10).unwrap();
-        let generated = generated.i((0, ..)).unwrap().to_vec1::<i64>().unwrap();
-        let generated = generated.iter().map(|x| *x as u32).collect::<Vec<_>>();
+        let generated = generated.i((0, ..)).unwrap().to_vec1::<u32>().unwrap();
         let decoded = vocab.decode(&generated).iter().collect::<String>();
         assert_eq!(decoded.len(), 11);
     }

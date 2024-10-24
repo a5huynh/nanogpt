@@ -75,13 +75,13 @@ impl Dataset {
 
         let inputs = batch_range.iter().map(|batch_start| {
             self.training
-                .i((*batch_start..batch_start + block_size,))
+                .i(*batch_start..batch_start + block_size)
                 .unwrap()
         });
 
         let targets = batch_range.iter().map(|batch_start| {
             let t_start = batch_start + 1;
-            self.training.i((t_start..t_start + block_size,)).unwrap()
+            self.training.i(t_start..t_start + block_size).unwrap()
         });
 
         (

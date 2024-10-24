@@ -1,6 +1,6 @@
-use candle_core::{DType, Device, IndexOp, Result, Shape, Tensor};
+use candle_core::{DType, Device, Error, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, Activation, AdamW, Embedding,
+    embedding, linear_no_bias, loss, ops::softmax, seq, Activation, AdamW, Embedding,
     Linear, Module, Optimizer, Sequential, VarBuilder, VarMap,
 };
 use head::MultiHeadAttention;
@@ -204,27 +204,27 @@ impl BigramModel {
             // Apply softmax to get probabilities
             // This gives us a tensor of [B, C] with the probabilities for each character
             // for each batch. e.g., a single batch will give us [1, C]
-            let probs = softmax_last_dim(&logits)?;
+            let probs = softmax(&logits, 1)?;
 
             // Sample from the distribution for each batch
             // Build a tensor where each row contains something sampled from the probability distribution
             // given by the softmax, This essentially simulates torch.multinomal(probs, num_samples=1)
             // which is not implemented in candle.
-            let mut samples: Vec<i64> = Vec::new();
+            let mut samples: Vec<u32> = Vec::new();
             let num_batches = probs.dim(0)?;
             for idx in 0..num_batches {
-                let batch_probs = probs.i((idx, ..))?;
                 // Each element in this vec is the probability of that particular character
                 // in the vocab occuring next.
-                let batch_probs = batch_probs.to_vec1::<f32>()?;
+                let batch_probs = probs.i((idx, ..))?.to_vec1::<f32>()?;
                 // We put this into a weighted index & sample for the next token.
-                let dist = rand::distributions::WeightedIndex::new(&batch_probs).unwrap();
-                let next_token = dist.sample(&mut self.rng) as i64;
+                let dist = rand::distributions::WeightedIndex::new(&batch_probs).map_err(Error::wrap)?;
+                let next_token = dist.sample(&mut self.rng) as u32;
                 samples.push(next_token);
             }
+
             // Append the sampled index to the running sequence.
             let samples = Tensor::new(samples, &self.device)?;
-            let samples = samples.reshape((num_batches, 1))?.to_dtype(DType::U32)?;
+            let samples = samples.reshape((num_batches, 1))?;
             ctxt = Tensor::cat(&[&ctxt, &samples], 1)?;
         }
 
