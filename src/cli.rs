@@ -13,6 +13,10 @@ pub enum Commands {
     Train {
         #[arg(short, long)]
         num_steps: Option<usize>,
+        /// Will attempt to use an existing checkpoint as a starting point vs starting
+        /// from scratch
+        #[arg(short, long)]
+        checkpoint: Option<std::path::PathBuf>,
     },
 }
 

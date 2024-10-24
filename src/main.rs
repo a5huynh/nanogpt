@@ -3,7 +3,8 @@ use std::path::Path;
 use candle_core::{backend::BackendDevice, Device, Result, Tensor};
 use clap::Parser;
 use cli::Commands;
-use dataset::{Dataset, RngType};
+use dataset::Dataset;
+use model::BigramModel;
 use rand::SeedableRng;
 
 mod cli;
@@ -58,6 +59,14 @@ fn main() -> Result<()> {
     };
 
     let rng = rand_pcg::Pcg32::seed_from_u64(1337);
+    // Load dataset & start training
+    let (vocab, data) = load_dataset(&device);
+    log::info!("Vocab [{} chars] | {vocab}", vocab.len());
+
+    let mut dataset = Dataset::new(&rng, &data);
+    dataset.print_stats();
+
+    let mut model = model::BigramModel::new(NUM_LAYERS, &device, &rng, vocab.len());
 
     match &args.subcommand {
         Some(Commands::Generate { prompt, num_tokens }) => {
@@ -69,26 +78,44 @@ fn main() -> Result<()> {
                 )));
             }
 
-            run_generation(prompt.clone(), num_tokens.unwrap_or(256), &device, &rng)
+            run_generation(
+                &vocab,
+                &mut model,
+                prompt.clone(),
+                num_tokens.unwrap_or(256),
+                &device,
+            )
         }
-        Some(Commands::Train { num_steps }) => {
-            run_training(num_steps.unwrap_or(DEFAULT_TRAINING_STEPS), &device, &rng)
+        Some(Commands::Train {
+            checkpoint,
+            num_steps,
+        }) => {
+            if let Some(checkpoint) = checkpoint {
+                log::info!("Attempting to load checkpoint {:?}", checkpoint);
+                model.parameters.load(checkpoint)?;
+            }
+
+            run_training(
+                &mut dataset,
+                &mut model,
+                num_steps.unwrap_or(DEFAULT_TRAINING_STEPS),
+            )?;
+
+            // Use the trained model to generate some text
+            log::info!("Testing model, generating a string...");
+            run_generation(&vocab, &mut model, None, 256, &device)
         }
         None => Ok(()),
     }
 }
 
 fn run_generation(
+    vocab: &Vocab,
+    model: &mut BigramModel,
     prompt: Option<String>,
     num_tokens: usize,
     device: &Device,
-    rng: &RngType,
 ) -> Result<()> {
-    // Load dataset & start training
-    let (vocab, _) = load_dataset(device);
-    log::info!("Vocab [{} chars] | {vocab}", vocab.len());
-
-    let mut model = model::BigramModel::new(NUM_LAYERS, device, rng, vocab.len());
     log::info!("Loading model from {LATEST_MODEL_PATH}");
     model.parameters.load(LATEST_MODEL_PATH)?;
 
@@ -109,27 +136,11 @@ fn run_generation(
     Ok(())
 }
 
-fn run_training(num_steps: usize, device: &Device, rng: &RngType) -> Result<()> {
-    // Load dataset & start training
-    let (vocab, data) = load_dataset(device);
-    log::info!("Vocab [{} chars] | {vocab}", vocab.len());
-
-    let mut dataset = Dataset::new(rng, &data);
-    dataset.print_stats();
-
-    let mut model = model::BigramModel::new(NUM_LAYERS, device, rng, vocab.len());
-    model.train(&mut dataset, num_steps)?;
+fn run_training(dataset: &mut Dataset, model: &mut BigramModel, num_steps: usize) -> Result<()> {
+    log::info!("starting model training...");
+    model.train(dataset, num_steps)?;
     log::info!("Saving model to {LATEST_MODEL_PATH}");
     model.parameters.save(LATEST_MODEL_PATH)?;
-
-    // Use the trained model to generate some text
-    log::info!("Testing model, generating a string...");
-    let start = Tensor::zeros((1, 1), candle_core::DType::U32, device)?;
-    let generated = model.generate(&start, 256)?;
-    let generated = generated.get(0)?.to_vec1()?;
-    let decoded = vocab.decode(&generated).iter().collect::<String>();
-    log::info!("Generated: {decoded}");
-
     Ok(())
 }
 
