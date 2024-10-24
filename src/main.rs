@@ -1,4 +1,4 @@
-use candle_core::{backend::BackendDevice, Device, MetalDevice, Tensor};
+use candle_core::{backend::BackendDevice, Device, Tensor};
 use clap::Parser;
 use cli::Commands;
 use dataset::{Dataset, RngType};
@@ -19,8 +19,10 @@ pub const BLOCK_SIZE: usize = 256; // T, "time" dimension.
 
 pub const NUM_EMBED: usize = 32; // C, Number of embedding dimensions
 pub const NUM_HEADS: usize = 4;
+pub const NUM_LAYERS: usize = 6;
 
 pub const LEARNING_RATE: f64 = 1e-3;
+
 pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
 pub const EPS: f64 = 1e-5;
 pub const DROPOUT: f32 = 0.2;
@@ -36,7 +38,13 @@ fn main() -> Result<(), candle_core::Error> {
     let args = cli::Args::parse();
 
     let device = if args.gpu {
-        Device::Metal(MetalDevice::new(0)?)
+        if cfg!(target_os = "macos") {
+            Device::Metal(candle_core::MetalDevice::new(0)?)
+        } else if cfg!(target_os = "windows") {
+            Device::Cuda(candle_core::CudaDevice::new(0)?)
+        } else {
+            return Err(candle_core::Error::Msg("OS not supported for GPU".into()));
+        }
     } else {
         Device::Cpu
     };

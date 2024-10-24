@@ -1,13 +1,17 @@
 use candle_core::{DType, Device, Error, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss, ops::{self, softmax_last_dim}, seq, Activation, AdamW, Embedding, Linear, Module, Optimizer, Sequential, VarBuilder, VarMap
+    embedding, linear_no_bias, loss,
+    ops::{self, softmax_last_dim},
+    seq, Activation, AdamW, Embedding, Linear, Module, Optimizer, Sequential, VarBuilder, VarMap,
 };
 use head::MultiHeadAttention;
 use norm::LayerNorm;
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
-use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, DROPOUT, EPS, LEARNING_RATE, NUM_EMBED, NUM_HEADS};
+use crate::{
+    dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, DROPOUT, EPS, LEARNING_RATE, NUM_EMBED, NUM_HEADS,
+};
 
 pub mod head;
 pub mod norm;
@@ -106,7 +110,12 @@ pub struct BigramModel {
 }
 
 impl BigramModel {
-    pub fn new(num_layers: usize, device: &candle_core::Device, rng: &Lcg64Xsh32, vocab_size: usize) -> Self {
+    pub fn new(
+        num_layers: usize,
+        device: &candle_core::Device,
+        rng: &Lcg64Xsh32,
+        vocab_size: usize,
+    ) -> Self {
         // Similar to nn.Parameter in pytorch.
         let var_map = VarMap::new();
         let var_builder = VarBuilder::from_varmap(&var_map, DType::F32, device);
@@ -162,7 +171,9 @@ impl BigramModel {
                 let (val_input, val_target) = dataset.get_validation_batch(BATCH_SIZE, BLOCK_SIZE);
                 let val_logits = self.forward(&val_input)?;
                 let val_loss = estimate_loss(&val_logits, &val_target)?.to_scalar::<f32>()?;
-                log::info!("step {step} - train loss = {train_loss:0.3}, val loss = {val_loss:0.3}");
+                log::info!(
+                    "step {step} - train loss = {train_loss:0.3}, val loss = {val_loss:0.3}"
+                );
             }
         }
 
@@ -191,9 +202,9 @@ impl BigramModel {
             // focus only on the last time step
             let (_, last, _) = logits.shape().dims3()?;
             let logits = logits.i((.., last - 1, ..))?; // Becomes [B, C]
-            // Apply softmax to get probabilities
-            // This gives us a tensor of [B, C] with the probabilities for each character
-            // for each batch. e.g., a single batch will give us [1, C]
+                                                        // Apply softmax to get probabilities
+                                                        // This gives us a tensor of [B, C] with the probabilities for each character
+                                                        // for each batch. e.g., a single batch will give us [1, C]
             let probs = softmax_last_dim(&logits)?;
 
             // Sample from the distribution for each batch
@@ -229,7 +240,7 @@ impl Module for BigramModel {
         // each token directly reads off the logits for the next token from a lookup table.
         log::debug!("encoding embeddings");
         let tok_embed = self.token_embedding_table.forward(input)?; // shape = [B, T, C]
-        // encode the positions of each token
+                                                                    // encode the positions of each token
         log::debug!("encoding positions");
         let positions = Tensor::arange::<u32>(0, time_size as u32, &self.device)?;
         let pos_embed = self.position_embedding_table.forward(&positions)?; // shape = [T, C]

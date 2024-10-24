@@ -1,5 +1,9 @@
 use candle_core::{Device, Result, Tensor, D};
-use candle_nn::{linear_no_bias, ops::{self, softmax_last_dim}, Linear, Module, VarBuilder};
+use candle_nn::{
+    linear_no_bias,
+    ops::{self, softmax_last_dim},
+    Linear, Module, VarBuilder,
+};
 
 use crate::{utils, BLOCK_SIZE, DROPOUT, NUM_EMBED};
 

@@ -24,7 +24,9 @@ impl Module for LayerNorm {
         let xvar = xs.var_keepdim(1)?; // batch variance
 
         // normalize to unit variance
-        let xhat = xs.broadcast_sub(&xmean)?.broadcast_div(&(xvar + self.eps)?)?;
+        let xhat = xs
+            .broadcast_sub(&xmean)?
+            .broadcast_div(&(xvar + self.eps)?)?;
         self.gamma.broadcast_mul(&xhat)?.broadcast_add(&self.beta)
     }
 }
