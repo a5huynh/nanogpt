@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use candle_core::{backend::BackendDevice, Device, Result, Tensor};
 use clap::Parser;
@@ -61,7 +61,7 @@ fn main() -> Result<()> {
 
     let rng = rand_pcg::Pcg32::seed_from_u64(1337);
     // Load dataset & start training
-    let (vocab, data) = load_dataset(&device);
+    let (vocab, data) = load_dataset(args.dataset.unwrap_or(DEFAULT_DATASET_PATH.into()), &device);
     log::info!("Vocab [{} chars] | {vocab}", vocab.len());
 
     let mut dataset = Dataset::new(&rng, &data);
@@ -148,9 +148,8 @@ fn run_training(dataset: &mut Dataset, model: &mut BigramModel, num_steps: usize
     Ok(())
 }
 
-fn load_dataset(device: &Device) -> (Vocab, Tensor) {
-    let contents =
-        std::fs::read_to_string(DEFAULT_DATASET_PATH).expect("Unable to read input file");
+fn load_dataset(dataset_file: PathBuf, device: &Device) -> (Vocab, Tensor) {
+    let contents = std::fs::read_to_string(dataset_file).expect("Unable to read input file");
     let vocab = Vocab::from_content(&contents);
     let data = Tensor::new(vocab.encode(&contents), device).expect("Unable to create tensor");
     let data = data
@@ -250,7 +249,7 @@ mod test {
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
         let (vocab, _) = load_dataset(&device);
 
-        let mut model = super::model::BigramModel::new(4,  0.0, &device, &rng, vocab.len());
+        let mut model = super::model::BigramModel::new(4, 0.0, &device, &rng, vocab.len());
 
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
         let generated = model.generate(&vocab, &test, 10).unwrap();

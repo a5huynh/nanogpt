@@ -25,6 +25,9 @@ pub enum Commands {
 pub struct Args {
     #[arg(short, long)]
     pub gpu: bool,
+    /// Change which dataset is used for the vocab + training.
+    #[arg(short, long)]
+    pub dataset: Option<std::path::PathBuf>,
     #[command(subcommand)]
     pub subcommand: Option<Commands>,
 }
