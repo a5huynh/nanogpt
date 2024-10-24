@@ -50,13 +50,19 @@ impl BigramModel {
         let var_builder = VarBuilder::from_varmap(&var_map, DType::F32, device);
 
         // Each token directly reads off the logits for the next token from a lookup table.
-        let token_embedding_table =
-            embedding(vocab_size, NUM_EMBED, var_builder.push_prefix("token"))
-                .expect("Unable to create token_embedding_table");
+        let token_embedding_table = embedding(
+            vocab_size,
+            NUM_EMBED,
+            var_builder.push_prefix("token_embedding"),
+        )
+        .expect("Unable to create token_embedding_table");
 
-        let position_embedding_table =
-            embedding(BLOCK_SIZE, NUM_EMBED, var_builder.push_prefix("position"))
-                .expect("Unable to create position_embedding_table");
+        let position_embedding_table = embedding(
+            BLOCK_SIZE,
+            NUM_EMBED,
+            var_builder.push_prefix("position_embedding"),
+        )
+        .expect("Unable to create position_embedding_table");
 
         let mut blocks = seq();
         for block_idx in 0..num_layers {
@@ -131,11 +137,10 @@ impl BigramModel {
     ) -> Result<Tensor> {
         log::info!("Generating {max_new_tokens} token(s)");
         log::info!("Starting shape: {:?}", ctxt.shape());
-        let mut ctxt = ctxt.clone();
 
-        // get predictions
+        let mut ctxt = ctxt.clone();
         for _ in 0..max_new_tokens {
-            // Crop or pad to BLOCK_SIZE
+            // crop the ctxt to the last BLOCK_SIZE tokens
             let (_, block) = ctxt.shape().dims2()?;
             let cropped = if block > BLOCK_SIZE {
                 ctxt.i((.., block - BLOCK_SIZE..))?
@@ -188,8 +193,9 @@ impl Module for BigramModel {
         let (_, time_size) = input.shape().dims2()?;
         // each token directly reads off the logits for the next token from a lookup table.
         log::debug!("encoding embeddings");
-        let tok_embed = self.token_embedding_table.forward(input)?; // shape = [B, T, C]
-                                                                    // encode the positions of each token
+        // shape = [B, T, C]
+        let tok_embed = self.token_embedding_table.forward(input)?;
+        // encode the positions of each token
         log::debug!("encoding positions");
         let positions = Tensor::arange::<u32>(0, time_size as u32, &self.device)?;
         let pos_embed = self.position_embedding_table.forward(&positions)?; // shape = [T, C]

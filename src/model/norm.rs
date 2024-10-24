@@ -21,7 +21,7 @@ impl Module for LayerNorm {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
         // calculate the forward pass
         let xmean = xs.mean_keepdim(1)?; // batch mean
-        let xvar = xs.var_keepdim(1)?; // batch variance
+        let xvar = xs.var_keepdim(2)?; // batch variance
 
         // normalize to unit variance
         let xhat = xs
