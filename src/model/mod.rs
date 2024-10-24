@@ -1,13 +1,17 @@
 use candle_core::{DType, Device, Error, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, AdamW, Embedding, Linear, Module, ModuleT, Optimizer, Sequential, VarBuilder, VarMap
+    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, AdamW, Embedding, Linear, Module,
+    Optimizer, Sequential, VarBuilder, VarMap,
 };
 
 use norm::LayerNorm;
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
-use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE, NUM_EMBED, NUM_HEADS};
+use crate::{
+    dataset::Dataset, utils::print_probs, vocab::Vocab, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE,
+    NUM_EMBED, NUM_HEADS,
+};
 
 pub mod block;
 pub mod head;
@@ -36,6 +40,7 @@ pub struct BigramModel {
 impl BigramModel {
     pub fn new(
         num_layers: usize,
+        dropout: f32,
         device: &candle_core::Device,
         rng: &Lcg64Xsh32,
         vocab_size: usize,
@@ -58,6 +63,7 @@ impl BigramModel {
             blocks = blocks.add(block::Block::new(
                 NUM_EMBED,
                 NUM_HEADS,
+                dropout,
                 device,
                 var_builder.push_prefix(format!("block_{}", block_idx)),
             ))
@@ -117,10 +123,14 @@ impl BigramModel {
 
     /// ctxt: The current context of characters as a (B, T) array of indices.
     /// Extends ctxt by <max_new_tokens>
-    pub fn generate(&mut self, ctxt: &Tensor, max_new_tokens: usize) -> Result<Tensor> {
+    pub fn generate(
+        &mut self,
+        vocab: &Vocab,
+        ctxt: &Tensor,
+        max_new_tokens: usize,
+    ) -> Result<Tensor> {
         log::info!("Generating {max_new_tokens} token(s)");
         log::info!("Starting shape: {:?}", ctxt.shape());
-
         let mut ctxt = ctxt.clone();
 
         // get predictions

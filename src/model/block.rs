@@ -1,7 +1,7 @@
 use candle_core::{Device, Result, Tensor};
 use candle_nn::{linear_no_bias, ops, seq, Activation, Module, Sequential, VarBuilder};
 
-use crate::{DROPOUT, EPS, NUM_EMBED};
+use crate::{EPS, NUM_EMBED};
 
 use super::{head::MultiHeadAttention, norm::LayerNorm};
 
@@ -19,6 +19,7 @@ impl Block {
     pub fn new(
         num_embeddings: usize,
         num_heads: usize,
+        dropout: f32,
         device: &Device,
         var_builder: VarBuilder,
     ) -> Self {
@@ -28,10 +29,15 @@ impl Block {
             attention: MultiHeadAttention::new(
                 head_size,
                 num_heads,
+                dropout,
                 device,
                 var_builder.push_prefix("attention"),
             ),
-            feed_forward: FeedForward::new(num_embeddings, var_builder.push_prefix("ffwd")),
+            feed_forward: FeedForward::new(
+                num_embeddings,
+                dropout,
+                var_builder.push_prefix("ffwd"),
+            ),
             layer_norm1: LayerNorm::new(NUM_EMBED, EPS, device),
             layer_norm2: LayerNorm::new(NUM_EMBED, EPS, device),
         }
@@ -52,7 +58,7 @@ pub struct FeedForward {
 }
 
 impl FeedForward {
-    pub fn new(num_embed: usize, var_builder: VarBuilder) -> Self {
+    pub fn new(num_embed: usize, dropout: f32, var_builder: VarBuilder) -> Self {
         let net = seq()
             .add(
                 linear_no_bias(
@@ -71,7 +77,7 @@ impl FeedForward {
                 )
                 .expect("Unable to create linear layer"),
             )
-            .add_fn(|xs| ops::dropout(xs, DROPOUT));
+            .add_fn(move |xs| ops::dropout(xs, dropout));
 
         Self { net }
     }

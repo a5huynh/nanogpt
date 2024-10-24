@@ -66,10 +66,9 @@ fn main() -> Result<()> {
     let mut dataset = Dataset::new(&rng, &data);
     dataset.print_stats();
 
-    let mut model = model::BigramModel::new(NUM_LAYERS, &device, &rng, vocab.len());
-
     match &args.subcommand {
         Some(Commands::Generate { prompt, num_tokens }) => {
+            let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
             let latest = Path::new(LATEST_MODEL_PATH);
 
             if !latest.exists() {
@@ -90,6 +89,8 @@ fn main() -> Result<()> {
             checkpoint,
             num_steps,
         }) => {
+            let mut model =
+                model::BigramModel::new(NUM_LAYERS, DROPOUT, &device, &rng, vocab.len());
             if let Some(checkpoint) = checkpoint {
                 log::info!("Attempting to load checkpoint {:?}", checkpoint);
                 model.parameters.load(checkpoint)?;
@@ -101,8 +102,10 @@ fn main() -> Result<()> {
                 num_steps.unwrap_or(DEFAULT_TRAINING_STEPS),
             )?;
 
-            // Use the trained model to generate some text
+            // Reload model and set dropout to 0
+            let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
             log::info!("Testing model, generating a string...");
+            // Use the trained model to generate some text
             run_generation(&vocab, &mut model, None, 256, &device)
         }
         None => Ok(()),
@@ -128,7 +131,7 @@ fn run_generation(
         Tensor::zeros((1, 1), candle_core::DType::U32, device)?
     };
 
-    let generated = model.generate(&ctxt, num_tokens)?;
+    let generated = model.generate(vocab, &ctxt, num_tokens)?;
     let generated = generated.get(0)?.to_vec1()?;
     let decoded = vocab.decode(&generated).iter().collect::<String>();
     log::info!("Generated:\n{decoded}");
@@ -248,7 +251,7 @@ mod test {
         let mut model = super::model::BigramModel::new(4, &device, &rng, vocab.len());
 
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
-        let generated = model.generate(&test, 10).unwrap();
+        let generated = model.generate(&vocab, &test, 10).unwrap();
         let generated = generated.i((0, ..)).unwrap().to_vec1::<u32>().unwrap();
         let decoded = vocab.decode(&generated).iter().collect::<String>();
         assert_eq!(decoded.len(), 11);

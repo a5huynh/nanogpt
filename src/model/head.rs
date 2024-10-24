@@ -5,7 +5,7 @@ use candle_nn::{
     Linear, Module, VarBuilder,
 };
 
-use crate::{utils, BLOCK_SIZE, DROPOUT, NUM_EMBED};
+use crate::{utils, BLOCK_SIZE, NUM_EMBED};
 
 pub struct Head {
     key: Linear,
@@ -13,10 +13,11 @@ pub struct Head {
     value: Linear,
     mask: Tensor,
     device: Device,
+    dropout: f32,
 }
 
 impl Head {
-    pub fn new(head_size: usize, device: &Device, var_builder: VarBuilder) -> Self {
+    pub fn new(head_size: usize, dropout: f32, device: &Device, var_builder: VarBuilder) -> Self {
         // what do i contain?
         let key = candle_nn::linear_no_bias(NUM_EMBED, head_size, var_builder.push_prefix("key"))
             .expect("Unable to create key layer");
@@ -37,6 +38,7 @@ impl Head {
             value,
             mask,
             device: device.clone(),
+            dropout,
         }
     }
 }
@@ -62,7 +64,7 @@ impl Module for Head {
         }
         let scores = softmax_last_dim(&scores)?;
         // Adding dropout to prevent overfitting by randomly shutting off neurons
-        let scores = ops::dropout(&scores, DROPOUT)?;
+        let scores = ops::dropout(&scores, self.dropout)?;
         // Weighted aggregation of the values.
         let v = self.value.forward(input)?;
         scores.matmul(&v)
@@ -73,12 +75,14 @@ impl Module for Head {
 pub struct MultiHeadAttention {
     heads: Vec<Head>,
     projection: Linear,
+    dropout: f32,
 }
 
 impl MultiHeadAttention {
     pub fn new(
         head_size: usize,
         num_heads: usize,
+        dropout: f32,
         device: &Device,
         var_builder: VarBuilder,
     ) -> Self {
@@ -86,6 +90,7 @@ impl MultiHeadAttention {
             .map(|idx| {
                 Head::new(
                     head_size,
+                    dropout,
                     device,
                     var_builder.push_prefix(format!("head_{idx}")),
                 )
@@ -96,7 +101,11 @@ impl MultiHeadAttention {
             linear_no_bias(NUM_EMBED, NUM_EMBED, var_builder.push_prefix("projection"))
                 .expect("Unable to create projection layer");
 
-        Self { heads, projection }
+        Self {
+            heads,
+            projection,
+            dropout,
+        }
     }
 }
 
@@ -113,6 +122,6 @@ impl Module for MultiHeadAttention {
         )?;
 
         let projected = self.projection.forward(&out)?;
-        ops::dropout(&projected, DROPOUT)
+        ops::dropout(&projected, self.dropout)
     }
 }
