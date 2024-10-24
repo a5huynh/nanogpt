@@ -8,6 +8,7 @@ pub struct LayerNorm {
 }
 
 impl LayerNorm {
+    #[allow(dead_code)]
     pub fn new(dim: usize, eps: f64, device: &Device) -> Self {
         Self {
             gamma: Tensor::ones((1, dim), candle_core::DType::F32, device).unwrap(),

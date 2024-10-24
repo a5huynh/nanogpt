@@ -1,9 +1,9 @@
 use candle_core::{Device, Result, Tensor};
-use candle_nn::{linear_no_bias, ops, seq, Activation, Module, Sequential, VarBuilder};
+use candle_nn::{linear_no_bias, ops, seq, Activation, LayerNorm, Module, Sequential, VarBuilder};
 
 use crate::{EPS, NUM_EMBED};
 
-use super::{head::MultiHeadAttention, norm::LayerNorm};
+use super::head::MultiHeadAttention;
 
 pub const FEED_FORWARD_OUT_SCALE: usize = 4;
 
@@ -38,8 +38,14 @@ impl Block {
                 dropout,
                 var_builder.push_prefix("ffwd"),
             ),
-            layer_norm1: LayerNorm::new(NUM_EMBED, EPS, device),
-            layer_norm2: LayerNorm::new(NUM_EMBED, EPS, device),
+            layer_norm1: LayerNorm::new_no_bias(
+                Tensor::ones(NUM_EMBED, candle_core::DType::F32, device).unwrap(),
+                EPS,
+            ),
+            layer_norm2: LayerNorm::new_no_bias(
+                Tensor::ones(NUM_EMBED, candle_core::DType::F32, device).unwrap(),
+                EPS,
+            ),
         }
     }
 }

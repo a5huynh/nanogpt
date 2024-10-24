@@ -69,7 +69,8 @@ fn main() -> Result<()> {
 
     match &args.subcommand {
         Some(Commands::Generate { prompt, num_tokens }) => {
-            let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
+            let mut model =
+                model::BigramModel::new(NUM_LAYERS, DROPOUT, &device, &rng, vocab.len());
             let latest = Path::new(LATEST_MODEL_PATH);
 
             if !latest.exists() {
@@ -104,7 +105,6 @@ fn main() -> Result<()> {
             )?;
 
             // Reload model and set dropout to 0
-            let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
             log::info!("Testing model, generating a string...");
             // Use the trained model to generate some text
             run_generation(&vocab, &mut model, None, 256, &device)
