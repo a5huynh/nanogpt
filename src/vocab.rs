@@ -74,8 +74,8 @@ impl Vocab {
 
 #[cfg(test)]
 mod test {
-    use candle_core::Device;
     use crate::load_dataset;
+    use candle_core::Device;
 
     #[test]
     fn test_decode() {

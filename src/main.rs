@@ -1,4 +1,4 @@
-use candle_core::{backend::BackendDevice, Device, IndexOp, MetalDevice, Tensor};
+use candle_core::{backend::BackendDevice, Device, MetalDevice, Tensor};
 use clap::Parser;
 use cli::Commands;
 use dataset::{Dataset, RngType};
@@ -11,10 +11,19 @@ mod utils;
 mod vocab;
 use vocab::Vocab;
 
-pub const BATCH_SIZE: usize = 32; // B
-pub const BLOCK_SIZE: usize = 8; // T, "time" dimension.
+// pub const BATCH_SIZE: usize = 32; // B
+// pub const BLOCK_SIZE: usize = 8; // T, "time" dimension.
+
+pub const BATCH_SIZE: usize = 64; // B
+pub const BLOCK_SIZE: usize = 256; // T, "time" dimension.
+
 pub const NUM_EMBED: usize = 32; // C, Number of embedding dimensions
+pub const NUM_HEADS: usize = 4;
+
+pub const LEARNING_RATE: f64 = 1e-3;
 pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
+pub const EPS: f64 = 1e-5;
+pub const DROPOUT: f32 = 0.2;
 
 fn main() -> Result<(), candle_core::Error> {
     // Default to info logging if nothing is set.
@@ -65,7 +74,7 @@ fn run_training(
     log::info!("Testing model, generating a string...");
     let start = Tensor::zeros((1, 1), candle_core::DType::U32, device)?;
     let generated = model.generate(&start, 256)?;
-    let generated = generated.i((0, ..)).unwrap().to_vec1::<u32>()?;
+    let generated = generated.get(0)?.to_vec1()?;
     let decoded = vocab.decode(&generated).iter().collect::<String>();
     log::info!("Generated: {decoded}");
 

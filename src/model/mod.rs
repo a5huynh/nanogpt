@@ -1,15 +1,16 @@
 use candle_core::{DType, Device, Error, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss, ops::softmax, seq, Activation, AdamW, Embedding,
-    Linear, Module, Optimizer, Sequential, VarBuilder, VarMap,
+    embedding, linear_no_bias, loss, ops::{self, softmax_last_dim}, seq, Activation, AdamW, Embedding, Linear, Module, Optimizer, Sequential, VarBuilder, VarMap
 };
 use head::MultiHeadAttention;
+use norm::LayerNorm;
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
-use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, NUM_EMBED};
+use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, DROPOUT, EPS, LEARNING_RATE, NUM_EMBED, NUM_HEADS};
 
 pub mod head;
+pub mod norm;
 
 pub fn estimate_loss(logits: &Tensor, targets: &Tensor) -> Result<Tensor> {
     log::debug!("reshaping logits");
@@ -26,6 +27,8 @@ pub fn estimate_loss(logits: &Tensor, targets: &Tensor) -> Result<Tensor> {
 pub struct Block {
     attention: MultiHeadAttention,
     feed_forward: FeedForward,
+    layer_norm1: LayerNorm,
+    layer_norm2: LayerNorm,
 }
 
 impl Block {
@@ -45,14 +48,16 @@ impl Block {
                 var_builder.push_prefix("attention"),
             ),
             feed_forward: FeedForward::new(num_embeddings, var_builder.push_prefix("ffwd")),
+            layer_norm1: LayerNorm::new(NUM_EMBED, EPS, device),
+            layer_norm2: LayerNorm::new(NUM_EMBED, EPS, device),
         }
     }
 }
 
 impl Module for Block {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        let x = (xs + self.attention.forward(xs)?)?;
-        x.clone() + self.feed_forward.forward(&x)?
+        let xs = (xs + self.attention.forward(&self.layer_norm1.forward(xs)?)?)?;
+        xs.clone() + self.feed_forward.forward(&self.layer_norm2.forward(&xs)?)
     }
 }
 
@@ -77,7 +82,8 @@ impl FeedForward {
                     var_builder.push_prefix("projection"),
                 )
                 .expect("Unable to create linear layer"),
-            );
+            )
+            .add_fn(|xs| ops::dropout(xs, DROPOUT));
 
         Self { net }
     }
@@ -114,31 +120,18 @@ impl BigramModel {
             embedding(BLOCK_SIZE, NUM_EMBED, var_builder.push_prefix("position"))
                 .expect("Unable to create position_embedding_table");
 
-        let blocks = seq()
-            .add(Block::new(
+        let mut blocks = seq();
+        let num_blocks = 4;
+        for block_idx in 0..num_blocks {
+            blocks = blocks.add(Block::new(
                 NUM_EMBED,
-                4,
+                NUM_HEADS,
                 device,
-                var_builder.push_prefix("block_0"),
+                var_builder.push_prefix(format!("block_{}", block_idx)),
             ))
-            .add(Block::new(
-                NUM_EMBED,
-                4,
-                device,
-                var_builder.push_prefix("block_1"),
-            ))
-            .add(Block::new(
-                NUM_EMBED,
-                4,
-                device,
-                var_builder.push_prefix("block_2"),
-            ))
-            .add(Block::new(
-                NUM_EMBED,
-                4,
-                device,
-                var_builder.push_prefix("block_3"),
-            ));
+        }
+
+        blocks = blocks.add(LayerNorm::new(NUM_EMBED, EPS, device));
 
         let lm_head = linear_no_bias(NUM_EMBED, vocab_size, var_builder.push_prefix("lm"))
             .expect("Unable to create lm_head layer");
@@ -155,7 +148,7 @@ impl BigramModel {
     }
 
     pub fn train(&self, dataset: &mut Dataset, num_steps: usize) -> Result<()> {
-        let mut optimizer = AdamW::new_lr(self.parameters.all_vars(), 1e-3)?;
+        let mut optimizer = AdamW::new_lr(self.parameters.all_vars(), LEARNING_RATE)?;
 
         for step in 0..num_steps {
             // sample a batch of data
@@ -169,8 +162,7 @@ impl BigramModel {
                 let train_loss = loss.to_scalar::<f32>()?;
                 let (val_input, val_target) = dataset.get_validation_batch(BATCH_SIZE, BLOCK_SIZE);
                 let val_logits = self.forward(&val_input)?;
-                let val_loss = estimate_loss(&val_logits, &val_target)?
-                    .to_scalar::<f32>()?;
+                let val_loss = estimate_loss(&val_logits, &val_target)?.to_scalar::<f32>()?;
                 log::info!("step {step} - train loss = {train_loss}, val loss = {val_loss}");
             }
         }
@@ -188,23 +180,22 @@ impl BigramModel {
 
         // get predictions
         for _ in 0..max_new_tokens {
-            // Crop to the last BLOCK_SIZE tokens.
+            // Crop or pad to BLOCK_SIZE
             let (_, block) = ctxt.shape().dims2()?;
             let cropped = if block > BLOCK_SIZE {
                 ctxt.i((.., block - BLOCK_SIZE..))?
             } else {
-                ctxt.clone()
+                ctxt.pad_with_zeros(1, BLOCK_SIZE - block, 0)?
             };
 
             let logits = self.forward(&cropped)?;
             // focus only on the last time step
             let (_, last, _) = logits.shape().dims3()?;
             let logits = logits.i((.., last - 1, ..))?; // Becomes [B, C]
-
             // Apply softmax to get probabilities
             // This gives us a tensor of [B, C] with the probabilities for each character
             // for each batch. e.g., a single batch will give us [1, C]
-            let probs = softmax(&logits, 1)?;
+            let probs = softmax_last_dim(&logits)?;
 
             // Sample from the distribution for each batch
             // Build a tensor where each row contains something sampled from the probability distribution
@@ -217,7 +208,8 @@ impl BigramModel {
                 // in the vocab occuring next.
                 let batch_probs = probs.i((idx, ..))?.to_vec1::<f32>()?;
                 // We put this into a weighted index & sample for the next token.
-                let dist = rand::distributions::WeightedIndex::new(&batch_probs).map_err(Error::wrap)?;
+                let dist =
+                    rand::distributions::WeightedIndex::new(&batch_probs).map_err(Error::wrap)?;
                 let next_token = dist.sample(&mut self.rng) as u32;
                 samples.push(next_token);
             }
@@ -238,7 +230,6 @@ impl Module for BigramModel {
         // each token directly reads off the logits for the next token from a lookup table.
         log::debug!("encoding embeddings");
         let tok_embed = self.token_embedding_table.forward(input)?; // shape = [B, T, C]
-
         // encode the positions of each token
         log::debug!("encoding positions");
         let positions = Tensor::arange::<u32>(0, time_size as u32, &self.device)?;

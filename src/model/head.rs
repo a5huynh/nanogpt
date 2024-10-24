@@ -1,7 +1,7 @@
 use candle_core::{Device, Result, Tensor, D};
-use candle_nn::{linear_no_bias, ops::softmax_last_dim, Linear, Module, VarBuilder};
+use candle_nn::{linear_no_bias, ops::{self, softmax_last_dim}, Linear, Module, VarBuilder};
 
-use crate::{utils, BLOCK_SIZE, NUM_EMBED};
+use crate::{utils, BLOCK_SIZE, DROPOUT, NUM_EMBED};
 
 pub struct Head {
     key: Linear,
@@ -57,6 +57,8 @@ impl Module for Head {
             scores = utils::masked_fill(&scores, &mask, f32::NEG_INFINITY, &self.device)?;
         }
         let scores = softmax_last_dim(&scores)?;
+        // Adding dropout to prevent overfitting by randomly shutting off neurons
+        let scores = ops::dropout(&scores, DROPOUT)?;
         // Weighted aggregation of the values.
         let v = self.value.forward(input)?;
         scores.matmul(&v)
