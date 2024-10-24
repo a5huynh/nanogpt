@@ -35,6 +35,7 @@ pub const EPS: f64 = 1e-5;
 pub const DROPOUT: f32 = 0.2;
 
 pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
+pub const DEFAULT_DATASET_PATH: &str = "./data/input.txt";
 
 fn main() -> Result<()> {
     // Default to info logging if nothing is set.
@@ -148,7 +149,8 @@ fn run_training(dataset: &mut Dataset, model: &mut BigramModel, num_steps: usize
 }
 
 fn load_dataset(device: &Device) -> (Vocab, Tensor) {
-    let contents = std::fs::read_to_string("./data/input.txt").expect("Unable to read input file");
+    let contents =
+        std::fs::read_to_string(DEFAULT_DATASET_PATH).expect("Unable to read input file");
     let vocab = Vocab::from_content(&contents);
     let data = Tensor::new(vocab.encode(&contents), device).expect("Unable to create tensor");
     let data = data
