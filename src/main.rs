@@ -250,7 +250,7 @@ mod test {
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
         let (vocab, _) = load_dataset(&device);
 
-        let mut model = super::model::BigramModel::new(4, &device, &rng, vocab.len());
+        let mut model = super::model::BigramModel::new(4,  0.0, &device, &rng, vocab.len());
 
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
         let generated = model.generate(&vocab, &test, 10).unwrap();
