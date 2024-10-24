@@ -160,7 +160,7 @@ fn load_dataset(dataset_file: PathBuf, device: &Device) -> (Vocab, Tensor) {
 
 #[cfg(test)]
 mod test {
-    use crate::{dataset::Dataset, load_dataset};
+    use crate::{dataset::Dataset, load_dataset, DEFAULT_DATASET_PATH};
     use candle_core::{Device, IndexOp, Tensor};
     use rand::{prelude::Distribution, SeedableRng};
 
@@ -197,7 +197,7 @@ mod test {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
 
-        let (vocab, data) = load_dataset(&device);
+        let (vocab, data) = load_dataset(DEFAULT_DATASET_PATH.into(), &device);
         let mut dataset = Dataset::new(&rng, &data);
 
         let (input, target) = dataset.get_validation_batch(1, 100);
@@ -213,7 +213,7 @@ mod test {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
 
-        let (_, data) = load_dataset(&device);
+        let (_, data) = load_dataset(DEFAULT_DATASET_PATH.into(), &device);
         let mut dataset = Dataset::new(&rng, &data);
 
         // How many independent sequences will we process in parallel
@@ -247,7 +247,7 @@ mod test {
     fn test_generation() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-        let (vocab, _) = load_dataset(&device);
+        let (vocab, _) = load_dataset(DEFAULT_DATASET_PATH.into(), &device);
 
         let mut model = super::model::BigramModel::new(4, 0.0, &device, &rng, vocab.len());
 
