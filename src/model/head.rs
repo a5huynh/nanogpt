@@ -112,6 +112,7 @@ impl Module for MultiHeadAttention {
             D::Minus1,
         )?;
 
-        self.projection.forward(&out)
+        let projected = self.projection.forward(&out)?;
+        ops::dropout(&projected, DROPOUT)
     }
 }

@@ -1,18 +1,15 @@
 use candle_core::{DType, Device, Error, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss,
-    ops::{self, softmax_last_dim},
-    seq, Activation, AdamW, Embedding, Linear, Module, Optimizer, Sequential, VarBuilder, VarMap,
+    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, AdamW, Embedding, Linear, Module, ModuleT, Optimizer, Sequential, VarBuilder, VarMap
 };
-use head::MultiHeadAttention;
+
 use norm::LayerNorm;
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
-use crate::{
-    dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, DROPOUT, EPS, LEARNING_RATE, NUM_EMBED, NUM_HEADS,
-};
+use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE, NUM_EMBED, NUM_HEADS};
 
+pub mod block;
 pub mod head;
 pub mod norm;
 
@@ -20,83 +17,10 @@ pub fn estimate_loss(logits: &Tensor, targets: &Tensor) -> Result<Tensor> {
     log::debug!("reshaping logits");
     let (batch_size, time_size, channels_size) = logits.shape().dims3()?;
     let logits = logits.reshape(Shape::from((batch_size * time_size, channels_size)))?;
-
     let targets = targets.reshape(Shape::from((batch_size * time_size,)))?;
 
     log::debug!("applying cross entropy");
     loss::cross_entropy(&logits, &targets)
-}
-
-/// Transformer block: communication followed by computation.
-pub struct Block {
-    attention: MultiHeadAttention,
-    feed_forward: FeedForward,
-    layer_norm1: LayerNorm,
-    layer_norm2: LayerNorm,
-}
-
-impl Block {
-    pub fn new(
-        num_embeddings: usize,
-        num_heads: usize,
-        device: &Device,
-        var_builder: VarBuilder,
-    ) -> Self {
-        let head_size = num_embeddings / num_heads;
-
-        Self {
-            attention: MultiHeadAttention::new(
-                head_size,
-                num_heads,
-                device,
-                var_builder.push_prefix("attention"),
-            ),
-            feed_forward: FeedForward::new(num_embeddings, var_builder.push_prefix("ffwd")),
-            layer_norm1: LayerNorm::new(NUM_EMBED, EPS, device),
-            layer_norm2: LayerNorm::new(NUM_EMBED, EPS, device),
-        }
-    }
-}
-
-impl Module for Block {
-    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        let xs = (xs + self.attention.forward(&self.layer_norm1.forward(xs)?)?)?;
-        xs.clone() + self.feed_forward.forward(&self.layer_norm2.forward(&xs)?)
-    }
-}
-
-/// Simple multi-layer perceptron
-/// Implementation of the position-wise feed-forward network in the transformer paper.
-pub struct FeedForward {
-    net: Sequential,
-}
-
-impl FeedForward {
-    pub fn new(num_embed: usize, var_builder: VarBuilder) -> Self {
-        let net = seq()
-            .add(
-                linear_no_bias(num_embed, 4 * num_embed, var_builder.push_prefix("linear1"))
-                    .expect("Unable to create linear layer"),
-            )
-            .add(Activation::Relu)
-            .add(
-                linear_no_bias(
-                    4 * num_embed,
-                    num_embed,
-                    var_builder.push_prefix("projection"),
-                )
-                .expect("Unable to create linear layer"),
-            )
-            .add_fn(|xs| ops::dropout(xs, DROPOUT));
-
-        Self { net }
-    }
-}
-
-impl Module for FeedForward {
-    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        self.net.forward(xs)
-    }
 }
 
 pub struct BigramModel {
@@ -131,7 +55,7 @@ impl BigramModel {
 
         let mut blocks = seq();
         for block_idx in 0..num_layers {
-            blocks = blocks.add(Block::new(
+            blocks = blocks.add(block::Block::new(
                 NUM_EMBED,
                 NUM_HEADS,
                 device,
@@ -169,6 +93,7 @@ impl BigramModel {
             let loss = estimate_loss(&logits, &target)?;
             // Combines loss.backward() & optimizer.step() from pytorch.
             optimizer.backward_step(&loss)?;
+
             if step % 100 == 0 {
                 let train_loss = loss.to_scalar::<f32>()?;
                 let (val_input, val_target) = dataset.get_validation_batch(BATCH_SIZE, BLOCK_SIZE);
@@ -211,10 +136,11 @@ impl BigramModel {
             let logits = self.forward(&cropped)?;
             // focus only on the last time step
             let (_, last, _) = logits.shape().dims3()?;
-            let logits = logits.i((.., last - 1, ..))?; // Becomes [B, C]
-                                                        // Apply softmax to get probabilities
-                                                        // This gives us a tensor of [B, C] with the probabilities for each character
-                                                        // for each batch. e.g., a single batch will give us [1, C]
+            // Becomes [B, C]
+            let logits = logits.i((.., last - 1, ..))?;
+            // Apply softmax to get probabilities
+            // This gives us a tensor of [B, C] with the probabilities for each character
+            // for each batch. e.g., a single batch will give us [1, C]
             let probs = softmax_last_dim(&logits)?;
 
             // Sample from the distribution for each batch
