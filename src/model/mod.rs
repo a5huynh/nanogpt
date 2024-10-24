@@ -106,7 +106,7 @@ pub struct BigramModel {
 }
 
 impl BigramModel {
-    pub fn new(device: &candle_core::Device, rng: &Lcg64Xsh32, vocab_size: usize) -> Self {
+    pub fn new(num_layers: usize, device: &candle_core::Device, rng: &Lcg64Xsh32, vocab_size: usize) -> Self {
         // Similar to nn.Parameter in pytorch.
         let var_map = VarMap::new();
         let var_builder = VarBuilder::from_varmap(&var_map, DType::F32, device);
@@ -121,8 +121,7 @@ impl BigramModel {
                 .expect("Unable to create position_embedding_table");
 
         let mut blocks = seq();
-        let num_blocks = 4;
-        for block_idx in 0..num_blocks {
+        for block_idx in 0..num_layers {
             blocks = blocks.add(Block::new(
                 NUM_EMBED,
                 NUM_HEADS,
@@ -163,7 +162,7 @@ impl BigramModel {
                 let (val_input, val_target) = dataset.get_validation_batch(BATCH_SIZE, BLOCK_SIZE);
                 let val_logits = self.forward(&val_input)?;
                 let val_loss = estimate_loss(&val_logits, &val_target)?.to_scalar::<f32>()?;
-                log::info!("step {step} - train loss = {train_loss}, val loss = {val_loss}");
+                log::info!("step {step} - train loss = {train_loss:0.3}, val loss = {val_loss:0.3}");
             }
         }
 

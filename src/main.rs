@@ -67,7 +67,7 @@ fn run_training(
     let mut dataset = Dataset::new(rng, &data);
     dataset.print_stats();
 
-    let mut model = model::BigramModel::new(device, rng, vocab.len());
+    let mut model = model::BigramModel::new(NUM_LAYERS, device, rng, vocab.len());
     model.train(&mut dataset, num_steps)?;
 
     // Use the trained model to generate some text
