@@ -163,6 +163,9 @@ impl BigramModel {
                 // Each element in this vec is the probability of that particular character
                 // in the vocab occuring next.
                 let batch_probs = probs.i((idx, ..))?.to_vec1::<f32>()?;
+                if max_new_tokens == 1 {
+                    print_probs(vocab, &batch_probs);
+                }
                 // We put this into a weighted index & sample for the next token.
                 let dist =
                     rand::distributions::WeightedIndex::new(&batch_probs).map_err(Error::wrap)?;
