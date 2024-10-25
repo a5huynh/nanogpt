@@ -5,7 +5,7 @@ use candle_nn::{
     Linear, Module, VarBuilder,
 };
 
-use crate::{utils, BLOCK_SIZE, NUM_EMBED};
+use crate::{utils, BLOCK_SIZE, NUM_EMBED, NUM_HEADS};
 
 pub struct Head {
     key: Linear,
@@ -47,7 +47,7 @@ impl Module for Head {
     fn forward(&self, input: &candle_core::Tensor) -> Result<Tensor> {
         let (_, block_size, _) = input.shape().dims3()?;
 
-        let k = self.key.forward(input)?; // (B, T, 16)
+        let k = self.key.forward(input)?; // (B, T, head_size)
         let q = self.query.forward(input)?;
         // Calculate the attention scores, aka the "affinities"
         // This is a scaled dot-product attention.  Intuitively, if the key & query
@@ -57,9 +57,10 @@ impl Module for Head {
         // Scales by 1 / sqrt(head_size))
         // The weights are normalized so that variance is keep around 1.
         let (_, _, hs) = k.shape().dims3()?;
+        // (B, T, hs) @ (B, hs, T) -> (B, T, T)
         let mut scores = (scores * (hs as f64).powf(-0.5))?;
         // Ignore future positions
-        if block_size > BLOCK_SIZE {
+        if block_size >= BLOCK_SIZE {
             let mask = self.mask.broadcast_as(scores.shape())?;
             scores = utils::masked_fill(&scores, &mask, f32::NEG_INFINITY, &self.device)?;
         }
@@ -80,14 +81,8 @@ pub struct MultiHeadAttention {
 }
 
 impl MultiHeadAttention {
-    pub fn new(
-        head_size: usize,
-        num_heads: usize,
-        dropout: f32,
-        device: &Device,
-        var_builder: VarBuilder,
-    ) -> Self {
-        let heads = (0..num_heads)
+    pub fn new(head_size: usize, dropout: f32, device: &Device, var_builder: VarBuilder) -> Self {
+        let heads = (0..NUM_HEADS)
             .map(|idx| {
                 Head::new(
                     head_size,

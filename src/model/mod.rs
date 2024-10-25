@@ -7,7 +7,7 @@ use candle_nn::{
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
-use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE, NUM_EMBED, NUM_HEADS};
+use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE, NUM_EMBED};
 
 pub mod block;
 pub mod head;
@@ -63,8 +63,6 @@ impl BigramModel {
         let mut blocks = seq();
         for block_idx in 0..num_layers {
             blocks = blocks.add(block::Block::new(
-                NUM_EMBED,
-                NUM_HEADS,
                 dropout,
                 device,
                 var_builder.push_prefix(format!("block_{}", block_idx)),
@@ -149,9 +147,9 @@ impl BigramModel {
 
             let logits = self.forward(&cropped)?;
             // focus only on the last time step
-            let (_, last, _) = logits.shape().dims3()?;
+            let (_, last_size, _) = logits.shape().dims3()?;
             // Becomes [B, C]
-            let logits = logits.i((.., last - 1, ..))?;
+            let logits = logits.i((.., last_size - 1, ..))?;
             // Apply softmax to get probabilities
             // This gives us a tensor of [B, C] with the probabilities for each character
             // for each batch. e.g., a single batch will give us [1, C]

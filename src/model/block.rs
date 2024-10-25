@@ -1,7 +1,7 @@
 use candle_core::{Device, Result, Tensor};
 use candle_nn::{linear_no_bias, ops, seq, Activation, LayerNorm, Module, Sequential, VarBuilder};
 
-use crate::{EPS, NUM_EMBED};
+use crate::{EPS, NUM_EMBED, NUM_HEADS};
 
 use super::head::MultiHeadAttention;
 
@@ -16,28 +16,17 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn new(
-        num_embeddings: usize,
-        num_heads: usize,
-        dropout: f32,
-        device: &Device,
-        var_builder: VarBuilder,
-    ) -> Self {
-        let head_size = num_embeddings / num_heads;
+    pub fn new(dropout: f32, device: &Device, var_builder: VarBuilder) -> Self {
+        let head_size = NUM_EMBED / NUM_HEADS;
 
         Self {
             attention: MultiHeadAttention::new(
                 head_size,
-                num_heads,
                 dropout,
                 device,
                 var_builder.push_prefix("attention"),
             ),
-            feed_forward: FeedForward::new(
-                num_embeddings,
-                dropout,
-                var_builder.push_prefix("ffwd"),
-            ),
+            feed_forward: FeedForward::new(dropout, var_builder.push_prefix("ffwd")),
             layer_norm1: LayerNorm::new_no_bias(
                 Tensor::ones(NUM_EMBED, candle_core::DType::F32, device).unwrap(),
                 EPS,
@@ -64,12 +53,12 @@ pub struct FeedForward {
 }
 
 impl FeedForward {
-    pub fn new(num_embed: usize, dropout: f32, var_builder: VarBuilder) -> Self {
+    pub fn new(dropout: f32, var_builder: VarBuilder) -> Self {
         let net = seq()
             .add(
                 linear_no_bias(
-                    num_embed,
-                    FEED_FORWARD_OUT_SCALE * num_embed,
+                    NUM_EMBED,
+                    FEED_FORWARD_OUT_SCALE * NUM_EMBED,
                     var_builder.push_prefix("linear1"),
                 )
                 .expect("Unable to create linear layer"),
@@ -77,8 +66,8 @@ impl FeedForward {
             .add(Activation::Relu)
             .add(
                 linear_no_bias(
-                    FEED_FORWARD_OUT_SCALE * num_embed,
-                    num_embed,
+                    FEED_FORWARD_OUT_SCALE * NUM_EMBED,
+                    NUM_EMBED,
                     var_builder.push_prefix("projection"),
                 )
                 .expect("Unable to create linear layer"),
