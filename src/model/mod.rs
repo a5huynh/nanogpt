@@ -1,6 +1,7 @@
 use candle_core::{DType, Device, Error, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, AdamW, Embedding, LayerNorm, Linear, Module, Optimizer, Sequential, VarBuilder, VarMap
+    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, AdamW, Embedding, LayerNorm,
+    Linear, Module, Optimizer, Sequential, VarBuilder, VarMap,
 };
 
 use rand::prelude::Distribution;
@@ -73,7 +74,10 @@ impl BigramModel {
             ))
         }
 
-        blocks = blocks.add(LayerNorm::new_no_bias(Tensor::ones(NUM_EMBED, DType::F32, device).unwrap(), EPS));
+        blocks = blocks.add(LayerNorm::new_no_bias(
+            Tensor::ones(NUM_EMBED, DType::F32, device).unwrap(),
+            EPS,
+        ));
 
         let lm_head = linear_no_bias(NUM_EMBED, vocab_size, var_builder.push_prefix("lm"))
             .expect("Unable to create lm_head layer");
