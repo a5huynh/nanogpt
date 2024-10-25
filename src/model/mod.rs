@@ -6,8 +6,11 @@ use candle_nn::{
 
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
+use tokio::sync::mpsc::Sender;
 
-use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE, NUM_EMBED};
+use crate::{
+    dataset::Dataset, stream::TokenSample, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE, NUM_EMBED,
+};
 
 pub mod block;
 pub mod head;
@@ -125,13 +128,18 @@ impl BigramModel {
 
     /// ctxt: The current context of characters as a (B, T) array of indices.
     /// Extends ctxt by <max_new_tokens>
-    pub fn generate(
+    pub async fn generate(
         &mut self,
         ctxt: &Tensor,
         max_new_tokens: usize,
+        stream: Option<Sender<TokenSample>>,
     ) -> Result<(Tensor, Vec<Vec<f32>>)> {
         log::info!("Generating {max_new_tokens} token(s)");
         log::info!("Starting shape: {:?}", ctxt.shape());
+
+        if let Some(ref stream) = stream {
+            stream.send(TokenSample::Start).await.unwrap();
+        }
 
         let mut ctxt = ctxt.clone();
         let mut saved_probs = Vec::with_capacity(max_new_tokens);
@@ -169,6 +177,13 @@ impl BigramModel {
                     rand::distributions::WeightedIndex::new(&batch_probs).map_err(Error::wrap)?;
                 let next_token = dist.sample(&mut self.rng) as u32;
                 saved_probs.push(batch_probs);
+                if let Some(ref stream) = stream {
+                    stream
+                        .send(TokenSample::NewSample(next_token))
+                        .await
+                        .unwrap();
+                }
+
                 samples.push(next_token);
             }
 
@@ -176,6 +191,10 @@ impl BigramModel {
             let samples = Tensor::new(samples, &self.device)?;
             let samples = samples.reshape((num_batches, 1))?;
             ctxt = Tensor::cat(&[&ctxt, &samples], 1)?;
+        }
+
+        if let Some(ref stream) = stream {
+            stream.send(TokenSample::End).await.unwrap();
         }
 
         Ok((ctxt, saved_probs))

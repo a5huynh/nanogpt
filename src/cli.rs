@@ -1,13 +1,15 @@
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Subcommand)]
 pub enum Commands {
     /// Generate text based on a trained model. Defaults to <models/latest.bin>
     Generate {
-        #[arg(long)]
+        #[arg(long, action = ArgAction::SetTrue)]
         print_probs: Option<bool>,
         #[arg(short, long)]
         prompt: Option<String>,
+        #[arg(short, long, action = ArgAction::SetTrue)]
+        stream: Option<bool>,
         #[arg(short, long)]
         num_tokens: Option<usize>,
     },
