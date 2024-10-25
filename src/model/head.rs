@@ -45,7 +45,7 @@ impl Head {
 
 impl Module for Head {
     fn forward(&self, input: &candle_core::Tensor) -> Result<Tensor> {
-        let (_, block_size, channels) = input.shape().dims3()?;
+        let (_, block_size, _) = input.shape().dims3()?;
 
         let k = self.key.forward(input)?; // (B, T, 16)
         let q = self.query.forward(input)?;
@@ -56,7 +56,8 @@ impl Module for Head {
         let scores = q.matmul(&k.transpose(D::Minus2, D::Minus1)?)?;
         // Scales by 1 / sqrt(head_size))
         // The weights are normalized so that variance is keep around 1.
-        let mut scores = (scores * (channels as f64).powf(-0.5))?;
+        let (_, _, hs) = k.shape().dims3()?;
+        let mut scores = (scores * (hs as f64).powf(-0.5))?;
         // Ignore future positions
         if block_size > BLOCK_SIZE {
             let mask = self.mask.broadcast_as(scores.shape())?;
