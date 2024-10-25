@@ -1,7 +1,6 @@
 use candle_core::{DType, Device, Error, IndexOp, Result, Shape, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, AdamW, Embedding, LayerNorm,
-    Linear, Module, Optimizer, Sequential, VarBuilder, VarMap,
+    embedding, linear_no_bias, loss, ops::softmax_last_dim, seq, AdamW, Embedding, LayerNorm, Linear, Module, Optimizer, Sequential, VarBuilder, VarMap
 };
 
 use rand::prelude::Distribution;
@@ -74,10 +73,7 @@ impl BigramModel {
             ))
         }
 
-        blocks = blocks.add(LayerNorm::new_no_bias(
-            Tensor::ones(NUM_EMBED, DType::F32, device).unwrap(),
-            EPS,
-        ));
+        blocks = blocks.add(LayerNorm::new_no_bias(Tensor::ones(NUM_EMBED, DType::F32, device).unwrap(), EPS));
 
         let lm_head = linear_no_bias(NUM_EMBED, vocab_size, var_builder.push_prefix("lm"))
             .expect("Unable to create lm_head layer");
@@ -107,8 +103,7 @@ impl BigramModel {
             let loss = estimate_loss(&logits, &target)?;
             // Combines loss.backward() & optimizer.step() from pytorch.
             optimizer.backward_step(&loss)?;
-
-            if step % 100 == 0 {
+            if step % 100 == 0 || step == num_steps - 1 {
                 let train_loss = loss.to_scalar::<f32>()?;
                 let (val_input, val_target) = dataset.get_validation_batch(BATCH_SIZE, BLOCK_SIZE);
                 let val_logits = self.forward(&val_input)?;
