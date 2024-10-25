@@ -5,6 +5,7 @@ use std::{
 
 pub type TokenSize = u32;
 
+#[derive(Clone)]
 pub struct Vocab {
     lookup: HashMap<char, TokenSize>,
     vocab: Vec<char>,

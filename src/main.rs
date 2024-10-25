@@ -1,4 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
+use stream::TokenSample;
+use tokio::sync::mpsc::{self, Sender};
 
 use candle_core::{backend::BackendDevice, Device, Result, Tensor};
 use clap::Parser;
@@ -10,6 +15,7 @@ use rand::SeedableRng;
 mod cli;
 mod dataset;
 mod model;
+mod stream;
 mod utils;
 mod vocab;
 use utils::print_probs;
@@ -38,7 +44,8 @@ pub const DROPOUT: f32 = 0.2;
 pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
 pub const DEFAULT_DATASET_PATH: &str = "./data/input.txt";
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Default to info logging if nothing is set.
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
@@ -68,13 +75,15 @@ fn main() -> Result<()> {
     let mut dataset = Dataset::new(&rng, &data);
     dataset.print_stats();
 
-    match &args.subcommand {
+    match args.subcommand {
         Some(Commands::Generate {
             print_probs,
             prompt,
+            stream,
             num_tokens,
         }) => {
             let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
+
             let latest = Path::new(LATEST_MODEL_PATH);
 
             if !latest.exists() {
@@ -83,6 +92,36 @@ fn main() -> Result<()> {
                 )));
             }
 
+            let tx = if stream.unwrap_or_default() {
+                log::info!("streaming tokens...");
+                let (tx, mut rx) = mpsc::channel::<TokenSample>(32);
+                let vocab = vocab.clone();
+                let prompt = prompt.clone();
+                tokio::spawn(async move {
+                    let prompt = prompt.unwrap_or_default();
+                    while let Some(message) = rx.recv().await {
+                        match message {
+                            TokenSample::Start => {
+                                print!("{prompt}");
+                            }
+                            TokenSample::NewSample(sample) => {
+                                let token = vocab.decode(&[sample]);
+                                print!("{}", token.iter().collect::<String>());
+                            }
+                            TokenSample::End => {
+                                println!();
+                                return;
+                            }
+                        }
+                        let _ = std::io::stdout().flush();
+                    }
+                });
+
+                Some(tx)
+            } else {
+                None
+            };
+
             run_generation(
                 &vocab,
                 &mut model,
@@ -90,9 +129,11 @@ fn main() -> Result<()> {
                     num_tokens: num_tokens.unwrap_or(256),
                     print_probs: print_probs.unwrap_or_default(),
                     prompt: prompt.clone(),
+                    stream: tx,
                 },
                 &device,
             )
+            .await
         }
         Some(Commands::Train {
             checkpoint,
@@ -122,9 +163,11 @@ fn main() -> Result<()> {
                     num_tokens: 256,
                     print_probs: false,
                     prompt: None,
+                    stream: None,
                 },
                 &device,
             )
+            .await
         }
         None => Ok(()),
     }
@@ -134,9 +177,10 @@ struct GenerationOptions {
     num_tokens: usize,
     print_probs: bool,
     prompt: Option<String>,
+    stream: Option<Sender<TokenSample>>,
 }
 
-fn run_generation(
+async fn run_generation(
     vocab: &Vocab,
     model: &mut BigramModel,
     options: GenerationOptions,
@@ -154,13 +198,19 @@ fn run_generation(
         Tensor::zeros((1, 1), candle_core::DType::U32, device)?
     };
 
-    let (generated, probs) = model.generate(&ctxt, options.num_tokens)?;
-    let generated = generated.get(0)?.to_vec1()?;
-    let decoded = vocab.decode(&generated).iter().collect::<String>();
-    log::info!("Generated:\n{decoded}");
-    if options.print_probs {
-        for prob in probs {
-            print_probs(vocab, &prob);
+    let (generated, probs) = model
+        .generate(&ctxt, options.num_tokens, options.stream.clone())
+        .await?;
+
+    // Only decode returned output if we're not streaming the result back.
+    if options.stream.is_none() {
+        let generated = generated.get(0)?.to_vec1()?;
+        let decoded = vocab.decode(&generated).iter().collect::<String>();
+        log::info!("Generated:\n{decoded}");
+        if options.print_probs {
+            for prob in probs {
+                print_probs(vocab, &prob);
+            }
         }
     }
 
