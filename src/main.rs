@@ -12,6 +12,7 @@ mod dataset;
 mod model;
 mod utils;
 mod vocab;
+use utils::print_probs;
 use vocab::Vocab;
 
 // pub const BATCH_SIZE: usize = 32; // B
@@ -68,9 +69,12 @@ fn main() -> Result<()> {
     dataset.print_stats();
 
     match &args.subcommand {
-        Some(Commands::Generate { prompt, num_tokens }) => {
-            let mut model =
-                model::BigramModel::new(NUM_LAYERS, DROPOUT, &device, &rng, vocab.len());
+        Some(Commands::Generate {
+            print_probs,
+            prompt,
+            num_tokens,
+        }) => {
+            let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
             let latest = Path::new(LATEST_MODEL_PATH);
 
             if !latest.exists() {
@@ -82,8 +86,11 @@ fn main() -> Result<()> {
             run_generation(
                 &vocab,
                 &mut model,
-                prompt.clone(),
-                num_tokens.unwrap_or(256),
+                GenerationOptions {
+                    num_tokens: num_tokens.unwrap_or(256),
+                    print_probs: print_probs.unwrap_or_default(),
+                    prompt: prompt.clone(),
+                },
                 &device,
             )
         }
@@ -104,20 +111,35 @@ fn main() -> Result<()> {
                 num_steps.unwrap_or(DEFAULT_TRAINING_STEPS),
             )?;
 
-            // Reload model and set dropout to 0
+            // Reload model and set dropout to 0 to test generating
             log::info!("Testing model, generating a string...");
-            // Use the trained model to generate some text
-            run_generation(&vocab, &mut model, None, 256, &device)
+            let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
+            model.parameters.load(LATEST_MODEL_PATH)?;
+            run_generation(
+                &vocab,
+                &mut model,
+                GenerationOptions {
+                    num_tokens: 256,
+                    print_probs: false,
+                    prompt: None,
+                },
+                &device,
+            )
         }
         None => Ok(()),
     }
 }
 
+struct GenerationOptions {
+    num_tokens: usize,
+    print_probs: bool,
+    prompt: Option<String>,
+}
+
 fn run_generation(
     vocab: &Vocab,
     model: &mut BigramModel,
-    prompt: Option<String>,
-    num_tokens: usize,
+    options: GenerationOptions,
     device: &Device,
 ) -> Result<()> {
     log::info!("Loading model from {LATEST_MODEL_PATH}");
@@ -125,17 +147,22 @@ fn run_generation(
 
     // Use the trained model to generate some text
     log::info!("Generating");
-    let ctxt = if let Some(prompt) = prompt {
+    let ctxt = if let Some(prompt) = options.prompt {
         let decoded = vocab.encode(&prompt);
         Tensor::new(decoded.clone(), device)?.reshape((1, decoded.len()))?
     } else {
         Tensor::zeros((1, 1), candle_core::DType::U32, device)?
     };
 
-    let generated = model.generate(vocab, &ctxt, num_tokens)?;
+    let (generated, probs) = model.generate(&ctxt, options.num_tokens)?;
     let generated = generated.get(0)?.to_vec1()?;
     let decoded = vocab.decode(&generated).iter().collect::<String>();
     log::info!("Generated:\n{decoded}");
+    if options.print_probs {
+        for prob in probs {
+            print_probs(vocab, &prob);
+        }
+    }
 
     Ok(())
 }
@@ -252,7 +279,7 @@ mod test {
         let mut model = super::model::BigramModel::new(4, 0.0, &device, &rng, vocab.len());
 
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
-        let generated = model.generate(&vocab, &test, 10).unwrap();
+        let (generated, _) = model.generate(&test, 10).unwrap();
         let generated = generated.i((0, ..)).unwrap().to_vec1::<u32>().unwrap();
         let decoded = vocab.decode(&generated).iter().collect::<String>();
         assert_eq!(decoded.len(), 11);

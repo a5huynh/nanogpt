@@ -7,10 +7,7 @@ use candle_nn::{
 use rand::prelude::Distribution;
 use rand_pcg::Lcg64Xsh32;
 
-use crate::{
-    dataset::Dataset, utils::print_probs, vocab::Vocab, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE,
-    NUM_EMBED, NUM_HEADS,
-};
+use crate::{dataset::Dataset, BATCH_SIZE, BLOCK_SIZE, EPS, LEARNING_RATE, NUM_EMBED, NUM_HEADS};
 
 pub mod block;
 pub mod head;
@@ -132,14 +129,15 @@ impl BigramModel {
     /// Extends ctxt by <max_new_tokens>
     pub fn generate(
         &mut self,
-        vocab: &Vocab,
         ctxt: &Tensor,
         max_new_tokens: usize,
-    ) -> Result<Tensor> {
+    ) -> Result<(Tensor, Vec<Vec<f32>>)> {
         log::info!("Generating {max_new_tokens} token(s)");
         log::info!("Starting shape: {:?}", ctxt.shape());
 
         let mut ctxt = ctxt.clone();
+        let mut saved_probs = Vec::with_capacity(max_new_tokens);
+
         for _ in 0..max_new_tokens {
             // crop the ctxt to the last BLOCK_SIZE tokens
             let (_, block) = ctxt.shape().dims2()?;
@@ -169,13 +167,10 @@ impl BigramModel {
                 // Each element in this vec is the probability of that particular character
                 // in the vocab occuring next.
                 let batch_probs = probs.i((idx, ..))?.to_vec1::<f32>()?;
-                if max_new_tokens == 1 {
-                    print_probs(vocab, &batch_probs);
-                }
-                // We put this into a weighted index & sample for the next token.
                 let dist =
                     rand::distributions::WeightedIndex::new(&batch_probs).map_err(Error::wrap)?;
                 let next_token = dist.sample(&mut self.rng) as u32;
+                saved_probs.push(batch_probs);
                 samples.push(next_token);
             }
 
@@ -185,7 +180,7 @@ impl BigramModel {
             ctxt = Tensor::cat(&[&ctxt, &samples], 1)?;
         }
 
-        Ok(ctxt)
+        Ok((ctxt, saved_probs))
     }
 }
 

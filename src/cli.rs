@@ -4,6 +4,8 @@ use clap::{Parser, Subcommand};
 pub enum Commands {
     /// Generate text based on a trained model. Defaults to <models/latest.bin>
     Generate {
+        #[arg(long)]
+        print_probs: Option<bool>,
         #[arg(short, long)]
         prompt: Option<String>,
         #[arg(short, long)]
