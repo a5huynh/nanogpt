@@ -5,7 +5,9 @@ use candle_nn::{
     Linear, Module, VarBuilder,
 };
 
-use crate::{utils, BLOCK_SIZE, NUM_EMBED, NUM_HEADS};
+use crate::utils;
+
+use super::Hyperparams;
 
 pub struct Head {
     key: Linear,
@@ -14,22 +16,38 @@ pub struct Head {
     mask: Tensor,
     device: Device,
     dropout: f32,
+    hyperparams: Hyperparams,
 }
 
 impl Head {
-    pub fn new(head_size: usize, dropout: f32, device: &Device, var_builder: VarBuilder) -> Self {
+    pub fn new(
+        hparams: &Hyperparams,
+        dropout: f32,
+        device: &Device,
+        var_builder: VarBuilder,
+    ) -> Self {
         // what do i contain?
-        let key = candle_nn::linear_no_bias(NUM_EMBED, head_size, var_builder.push_prefix("key"))
-            .expect("Unable to create key layer");
+        let key = candle_nn::linear_no_bias(
+            hparams.num_embed,
+            hparams.head_size(),
+            var_builder.push_prefix("key"),
+        )
+        .expect("Unable to create key layer");
         // what am i looking for?
-        let query =
-            candle_nn::linear_no_bias(NUM_EMBED, head_size, var_builder.push_prefix("query"))
-                .expect("Unable to create key layer");
-        let value =
-            candle_nn::linear_no_bias(NUM_EMBED, head_size, var_builder.push_prefix("value"))
-                .expect("Unable to create key layer");
+        let query = candle_nn::linear_no_bias(
+            hparams.num_embed,
+            hparams.head_size(),
+            var_builder.push_prefix("query"),
+        )
+        .expect("Unable to create key layer");
+        let value = candle_nn::linear_no_bias(
+            hparams.num_embed,
+            hparams.head_size(),
+            var_builder.push_prefix("value"),
+        )
+        .expect("Unable to create key layer");
 
-        let mask = Tensor::tril2(BLOCK_SIZE, candle_core::DType::U32, device)
+        let mask = Tensor::tril2(hparams.block_size, candle_core::DType::U32, device)
             .expect("Unable to create mask");
 
         Self {
@@ -39,6 +57,7 @@ impl Head {
             mask,
             device: device.clone(),
             dropout,
+            hyperparams: hparams.clone(),
         }
     }
 }
@@ -60,7 +79,7 @@ impl Module for Head {
         // (B, T, hs) @ (B, hs, T) -> (B, T, T)
         let mut scores = (scores * (hs as f64).powf(-0.5))?;
         // Ignore future positions
-        if block_size >= BLOCK_SIZE {
+        if block_size >= self.hyperparams.block_size {
             let mask = self.mask.broadcast_as(scores.shape())?;
             scores = utils::masked_fill(&scores, &mask, f32::NEG_INFINITY, &self.device)?;
         }
@@ -81,11 +100,16 @@ pub struct MultiHeadAttention {
 }
 
 impl MultiHeadAttention {
-    pub fn new(head_size: usize, dropout: f32, device: &Device, var_builder: VarBuilder) -> Self {
-        let heads = (0..NUM_HEADS)
+    pub fn new(
+        hparams: &Hyperparams,
+        dropout: f32,
+        device: &Device,
+        var_builder: VarBuilder,
+    ) -> Self {
+        let heads = (0..hparams.num_heads)
             .map(|idx| {
                 Head::new(
-                    head_size,
+                    hparams,
                     dropout,
                     device,
                     var_builder.push_prefix(format!("head_{idx}")),
@@ -93,9 +117,12 @@ impl MultiHeadAttention {
             })
             .collect::<Vec<_>>();
 
-        let projection =
-            linear_no_bias(NUM_EMBED, NUM_EMBED, var_builder.push_prefix("projection"))
-                .expect("Unable to create projection layer");
+        let projection = linear_no_bias(
+            hparams.num_embed,
+            hparams.num_embed,
+            var_builder.push_prefix("projection"),
+        )
+        .expect("Unable to create projection layer");
 
         Self {
             heads,
