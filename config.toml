@@ -1,0 +1,8 @@
+[hyperparams]
+# Technically only for training but we'll keep it here.
+batch_size = 8
+block_size = 256
+
+num_embed = 384
+num_heads = 4
+num_layers = 4

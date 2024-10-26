@@ -75,7 +75,7 @@ impl Vocab {
 
 #[cfg(test)]
 mod test {
-    use crate::load_dataset;
+    use crate::{load_dataset, DEFAULT_DATASET_PATH};
     use candle_core::Device;
 
     #[test]
@@ -95,7 +95,7 @@ mod test {
     #[test]
     fn test_dataset_decode() {
         let device = Device::Cpu;
-        let (vocab, _) = load_dataset(&device);
+        let (vocab, _) = load_dataset(DEFAULT_DATASET_PATH.into(), &device);
 
         let test_string = "HELLO world, test";
         let encoded = vocab.encode(&test_string);

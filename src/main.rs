@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -9,7 +10,7 @@ use candle_core::{backend::BackendDevice, Device, Result, Tensor};
 use clap::Parser;
 use cli::Commands;
 use dataset::Dataset;
-use model::BigramModel;
+use model::{BigramModel, Hyperparams};
 use rand::SeedableRng;
 
 mod cli;
@@ -21,28 +22,30 @@ mod vocab;
 use utils::print_probs;
 use vocab::Vocab;
 
+// -- Values used in video for testing.
 // pub const BATCH_SIZE: usize = 32; // B
 // pub const BLOCK_SIZE: usize = 8; // T, "time" dimension.
 //
 // pub const NUM_EMBED: usize = 32; // C, Number of embedding dimensions
+// pub const NUM_EMBED: usize = 384; // C, Number of embedding dimensions
 // pub const NUM_HEADS: usize = 4;
 // pub const NUM_LAYERS: usize = 4;
+// ------
 
-pub const BATCH_SIZE: usize = 32; // B
-pub const BLOCK_SIZE: usize = 128; // T, "time" dimension.
-
-pub const NUM_EMBED: usize = 64; // C, Number of embedding dimensions
-pub const NUM_HEADS: usize = 4;
-pub const NUM_LAYERS: usize = 6;
-
-pub const LEARNING_RATE: f64 = 1e-3;
+pub const LEARNING_RATE: f64 = 3e-4;
 
 pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
 pub const EPS: f64 = 1e-5;
 pub const DROPOUT: f32 = 0.2;
 
+pub const CONFIG_FILE: &str = "config.toml";
 pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
 pub const DEFAULT_DATASET_PATH: &str = "./data/input.txt";
+
+#[derive(Deserialize)]
+struct Config {
+    pub hyperparams: Hyperparams,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -75,6 +78,16 @@ async fn main() -> Result<()> {
     let mut dataset = Dataset::new(&rng, &data);
     dataset.print_stats();
 
+    let config = Path::new(CONFIG_FILE);
+    let hyperparams: Hyperparams = if config.exists() {
+        let config: Config =
+            toml::from_str(&std::fs::read_to_string(config).map_err(candle_core::Error::wrap)?)
+                .map_err(candle_core::Error::wrap)?;
+        config.hyperparams
+    } else {
+        Hyperparams::default()
+    };
+
     match args.subcommand {
         Some(Commands::Generate {
             print_probs,
@@ -82,7 +95,7 @@ async fn main() -> Result<()> {
             stream,
             num_tokens,
         }) => {
-            let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
+            let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab.len());
 
             let latest = Path::new(LATEST_MODEL_PATH);
 
@@ -140,7 +153,7 @@ async fn main() -> Result<()> {
             num_steps,
         }) => {
             let mut model =
-                model::BigramModel::new(NUM_LAYERS, DROPOUT, &device, &rng, vocab.len());
+                model::BigramModel::new(&hyperparams, DROPOUT, &device, &rng, vocab.len());
             if let Some(checkpoint) = checkpoint {
                 log::info!("Attempting to load checkpoint {:?}", checkpoint);
                 model.parameters.load(checkpoint)?;
@@ -154,7 +167,7 @@ async fn main() -> Result<()> {
 
             // Reload model and set dropout to 0 to test generating
             log::info!("Testing model, generating a string...");
-            let mut model = model::BigramModel::new(NUM_LAYERS, 0.0, &device, &rng, vocab.len());
+            let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab.len());
             model.parameters.load(LATEST_MODEL_PATH)?;
             run_generation(
                 &vocab,
@@ -237,7 +250,7 @@ fn load_dataset(dataset_file: PathBuf, device: &Device) -> (Vocab, Tensor) {
 
 #[cfg(test)]
 mod test {
-    use crate::{dataset::Dataset, load_dataset, DEFAULT_DATASET_PATH};
+    use crate::{dataset::Dataset, load_dataset, model::Hyperparams, DEFAULT_DATASET_PATH};
     use candle_core::{Device, IndexOp, Tensor};
     use rand::{prelude::Distribution, SeedableRng};
 
@@ -307,29 +320,19 @@ mod test {
         let (x, y) = target.shape().dims2().unwrap();
         assert_eq!(x, batch_size);
         assert_eq!(y, block_size);
-        // for bidx in 0..batch_size {
-        //     for t in 0..block_size {
-        //         let context = input.i((bidx, ..t + 1)).unwrap();
-        //         let target = target.i((bidx, t)).unwrap();
-        //         println!(
-        //             "when input is {:?} the target: {}",
-        //             context.to_vec1::<u32>().unwrap(),
-        //             target.to_vec0::<u32>().unwrap()
-        //         );
-        //     }
-        // }
     }
 
-    #[test]
-    fn test_generation() {
+    #[tokio::test]
+    async fn test_generation() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
         let (vocab, _) = load_dataset(DEFAULT_DATASET_PATH.into(), &device);
 
-        let mut model = super::model::BigramModel::new(4, 0.0, &device, &rng, vocab.len());
+        let hparams = Hyperparams::default();
+        let mut model = super::model::BigramModel::new(&hparams, 0.0, &device, &rng, vocab.len());
 
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
-        let (generated, _) = model.generate(&test, 10).unwrap();
+        let (generated, _) = model.generate(&test, 10, None).await.unwrap();
         let generated = generated.i((0, ..)).unwrap().to_vec1::<u32>().unwrap();
         let decoded = vocab.decode(&generated).iter().collect::<String>();
         assert_eq!(decoded.len(), 11);
