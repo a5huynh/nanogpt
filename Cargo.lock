@@ -813,6 +813,9 @@ dependencies = [
 [[package]]
 name = "nanotok"
 version = "0.1.0"
+dependencies = [
+ "indexmap",
+]
 
 [[package]]
 name = "num"
