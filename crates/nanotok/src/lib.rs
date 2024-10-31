@@ -6,14 +6,73 @@ type BytePair = (u32, u32);
 /// Implementation of byte-pair encoding as an excercise.
 /// Ideally if you need an actually tokenizer trained on real data,
 /// use something like tiktoken.
-pub fn decode_string(string: &str) -> Vec<u8> {
-    string.as_bytes().to_owned()
+pub fn str_to_tokens(string: &str) -> Vec<u32> {
+    string
+        .as_bytes()
+        .iter()
+        .map(|x| *x as u32)
+        .collect::<Vec<_>>()
 }
 
-pub fn encode_string(arr: &[u8]) -> String {
-    todo!()
+/// Given a vocabulary, encode a string to its equivalent tokens.
+pub fn encode_to_tokens(vocab: &IndexMap<BytePair, u32>, string: &str) -> Vec<u32> {
+    let mut tokens = str_to_tokens(string);
+    for (pair, token) in vocab.iter() {
+        tokens = merge(&tokens, *pair, *token);
+    }
+
+    tokens
 }
 
+/// Given a vocabulary, decode an array of token ids to the string representation.
+pub fn tokens_to_str(vocab: &IndexMap<BytePair, u32>, tokens: &[u32]) -> String {
+    let mut string = Vec::new();
+    let mut tokens = tokens.to_owned();
+
+    // Loop until we have no more tokens to replace, in reverse order
+    for (pair, token) in vocab.iter().rev() {
+        println!("replacing {token} with {pair:?}");
+        for tid in tokens {
+            if tid == *token {
+                string.push(pair.0);
+                string.push(pair.1);
+            } else {
+                string.push(tid);
+            }
+        }
+
+        tokens = string.clone();
+        string.clear();
+    }
+
+    // Convert to bytes and convert to a string
+    let bytes = tokens.iter().map(|x| *x as u8).collect::<Vec<u8>>();
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
+pub fn bpe(text: &str, vocab_size: usize) -> (Vec<u32>, IndexMap<BytePair, u32>) {
+    // new token ids
+    let idx: u32 = 256;
+    // subtract by existing token ids to get the number of merges we need to do.
+    let num_merges = vocab_size - 256;
+
+    let mut tokens = str_to_tokens(text);
+    // Maps byte pairs to their new index
+    let mut merges: IndexMap<BytePair, u32> = IndexMap::new();
+
+    for merge_id in 0..num_merges {
+        if let Some((pair, _)) = most_common_pair(&tokens) {
+            let replacement_id = idx + merge_id as u32;
+            tokens = merge(&tokens, pair, replacement_id);
+            merges.insert(pair, replacement_id);
+        }
+    }
+
+    (tokens, merges)
+}
+
+/// Given a list of tokens, replace any byte pairs with the replacement id and
+/// return the new list.
 pub fn merge(tokens: &[u32], pair: BytePair, replacement_id: u32) -> Vec<u32> {
     let mut merged = Vec::new();
 
@@ -64,20 +123,24 @@ mod tests {
 
     #[test]
     fn test_with_real_text() {
-        let text = r#"Ｕｎｉｃｏｄｅ! 🅤🅝🅘🅒🅞🅓🅔‽ 🇺‌🇳‌🇮‌🇨‌🇴‌🇩‌🇪! 😄 The very name strikes fear and awe into the hearts of programmers worldwide. We all know we ought to “support Unicode” in our software (whatever that means—like using wchar_t for all the strings, right?). But Unicode can be abstruse, and diving into the thousand-page Unicode Standard plus its dozens of supplementary annexes, reports, and notes can be more than a little intimidating. I don’t blame programmers for still finding the whole thing mysterious, even 30 years after Unicode’s inception."#;
-        let tokens = text
-            .as_bytes()
-            .iter()
-            .map(|x| *x as u32)
-            .collect::<Vec<_>>();
+        let text = include_str!("../fixtures/test_data.txt");
+        let tokens = str_to_tokens(&text);
 
         let (mcp, count) = most_common_pair(&tokens).unwrap();
         // let encoded = String::from_utf8([mcp.0, mcp.1].to_vec());
         assert_eq!(mcp, (101, 32));
-        assert_eq!(count, 20);
+        assert_eq!(count, 638);
 
-        let merged = merge(&tokens, mcp, 256);
-        assert_eq!(merged.len(), tokens.len() - count);
+        // Test creating a vocab with the text
+        let (compressed, vocab) = bpe(&text, 276);
+        let string = tokens_to_str(&vocab, &compressed);
+        assert_eq!(string, text);
+
+        // Test using the vocab to encode & decode a different set of characters.
+        let text = include_str!("../fixtures/test_data_2.txt");
+        let rencoded = encode_to_tokens(&vocab, &text);
+        let decoded = tokens_to_str(&vocab, &rencoded);
+        assert_eq!(text, decoded);
     }
 
     #[test]
@@ -88,12 +151,8 @@ mod tests {
 
     #[test]
     fn test_common_pair() {
-        let test_string = "aaacccccbbbb"
-            .as_bytes()
-            .iter()
-            .map(|x| *x as u32)
-            .collect::<Vec<_>>();
-        let pair = most_common_pair(&test_string);
+        let tokens = str_to_tokens("aaacccccbbbb");
+        let pair = most_common_pair(&tokens);
         assert_eq!(pair, Some(((99, 99), 4)));
 
         let (pair, _) = pair.unwrap();
