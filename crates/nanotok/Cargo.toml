@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+fancy-regex = "0.14.0"
 indexmap = "2.6.0"
+tiktoken = "1.0.1"

@@ -1,7 +1,13 @@
 /// Rust std HashMap does not preserve insertion order.
 use indexmap::IndexMap;
 
-type BytePair = (u32, u32);
+pub type BytePair = (u32, u32);
+
+pub const GPT2_SPLIT_PATTERN: &str = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+";
+
+// NOTES:
+// - GPT4 ignores case when splitting (unlike GPT2's split pattern)
+pub const GPT4_SPLIT_PATTERN: &str = r"'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+";
 
 /// Implementation of byte-pair encoding as an excercise.
 /// Ideally if you need an actually tokenizer trained on real data,
@@ -31,7 +37,6 @@ pub fn tokens_to_str(vocab: &IndexMap<BytePair, u32>, tokens: &[u32]) -> String 
 
     // Loop until we have no more tokens to replace, in reverse order
     for (pair, token) in vocab.iter().rev() {
-        println!("replacing {token} with {pair:?}");
         for tid in tokens {
             if tid == *token {
                 string.push(pair.0);
@@ -119,6 +124,8 @@ pub fn most_common_pair(bytes: &[u32]) -> Option<(BytePair, usize)> {
 
 #[cfg(test)]
 mod tests {
+    use fancy_regex::Regex;
+
     use super::*;
 
     #[test]
@@ -159,5 +166,30 @@ mod tests {
         let pair = [pair.0 as u8, pair.1 as u8].to_vec();
         let encoded = String::from_utf8_lossy(&pair);
         assert_eq!(encoded.to_string(), "cc".to_string());
+    }
+
+    #[test]
+    fn test_gpt2_split_patterns() {
+        let re = Regex::new(super::GPT2_SPLIT_PATTERN).unwrap();
+        let matches = re.find_iter("Hello world HOW'S are you?")
+            .flat_map(|x| x.ok())
+            .map(|x| x.as_str().to_string())
+            .collect::<Vec<_>>();
+
+        dbg!(&matches);
+        assert_eq!(matches.len(), 20);
+    }
+
+
+    #[test]
+    fn test_gpt4_split_patterns() {
+        let re = Regex::new(super::GPT4_SPLIT_PATTERN).unwrap();
+        let matches = re.find_iter("Hello world HOW'S are you?")
+            .flat_map(|x| x.ok())
+            .map(|x| x.as_str().to_string())
+            .collect::<Vec<_>>();
+
+        dbg!(&matches);
+        assert_eq!(matches.len(), 20);
     }
 }
