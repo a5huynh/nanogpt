@@ -92,6 +92,10 @@ impl Tokenizer for BasicTokenizer {
         let bytes = string.iter().map(|x| *x as u8).collect::<Vec<u8>>();
         String::from_utf8_lossy(&bytes).to_string()
     }
+
+    fn vocab(&self) -> IndexMap<TokenSize, Vec<u32>> {
+        self.vocab.clone()
+    }
 }
 
 #[cfg(test)]

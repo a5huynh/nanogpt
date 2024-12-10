@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Subcommand, Parser};
-use nanotok::tokenizers::basic::BasicTokenizer;
+use nanotok::tokenizers::{basic::BasicTokenizer, Tokenizer};
 use strum_macros::{Display, EnumString};
 
 #[derive(Clone, EnumString, Display)]
@@ -50,8 +50,16 @@ async fn main() -> anyhow::Result<()> {
             log::info!("Training <{}> using {text_file:?}", args.model);
             let mut tokenizer = BasicTokenizer::new();
             let text = std::fs::read_to_string(text_file)?;
+
             log::info!("Training w/ {} chars", text.len());
             tokenizer.train(&text, 276);
+
+            log::info!("=== Trained Vocab ===");
+            for (token_id, bytes) in tokenizer.vocab() {
+                let converted = bytes.iter().map(|x| *x as u8).collect::<Vec<u8>>();
+                let lossy_rep = String::from_utf8_lossy(&converted);
+                println!("Token {token_id}: {bytes:?} - \"{lossy_rep}\"");
+            }
         }
     }
 

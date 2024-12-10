@@ -12,6 +12,7 @@ pub trait Tokenizer {
     fn encode(&self, text: &str) -> Vec<TokenSize>;
     /// Given a vocabulary, decode an array of token ids to the string representation.
     fn decode(&self, tokens: &[TokenSize]) -> String;
+    fn vocab(&self) -> IndexMap<TokenSize, Vec<u32>>;
 }
 
 pub fn str_to_tokens(string: &str) -> Vec<u32> {
