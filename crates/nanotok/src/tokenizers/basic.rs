@@ -102,6 +102,31 @@ impl Tokenizer for BasicTokenizer {
 mod tests {
     use super::*;
 
+    /// Test to ensure our merging is correctly handled by the decoder/encoder.
+    /// Following along the Wikipedia example:
+    /// https://en.wikipedia.org/wiki/Byte_pair_encoding
+    ///
+    ///  According to Wikipedia, running bpe on the input string:
+    /// "aaabdaaabac"
+    ///
+    /// for 3 merges will result in string:
+    /// "XdXac"
+    /// where:
+    /// X=ZY
+    /// Y=ab
+    /// Z=aa
+    ///
+    #[test]
+    fn test_merging() {
+        let text = "aaabdaaabac";
+        let mut tokenizer = BasicTokenizer::new();
+        tokenizer.train(&text, 256 + 3);
+
+        let ids = tokenizer.encode(&text);
+        assert_eq!(ids, vec![258, 100, 258, 97, 99]);
+        assert_eq!(text, tokenizer.decode(&ids));
+    }
+
     #[test]
     fn test_basic_tokenizer() {
         // Test creating a vocab with the text
@@ -119,6 +144,5 @@ mod tests {
         let decoded = tokenizer.decode( &rencoded);
         assert_eq!(text, decoded);
     }
-
 }
 
