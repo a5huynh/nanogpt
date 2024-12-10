@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 
-use super::{merge, most_common_pair, str_to_tokens, BytePair, TokenSize};
+use super::{merge, most_common_pair, str_to_tokens, BytePair, TokenSize, Tokenizer};
 
 
 /// Implementation of byte-pair encoding as an excercise.
@@ -26,9 +26,11 @@ impl BasicTokenizer {
             merges: IndexMap::new(),
         }
     }
+}
 
+impl Tokenizer for BasicTokenizer {
     /// Use bpe to train a tokenizer model.
-    pub fn train(&mut self, text: &str, vocab_size: usize) {
+    fn train(&mut self, text: &str, vocab_size: usize) {
         if vocab_size < 256 {
             panic!("Vocab size must be greater than 256");
         }
@@ -67,7 +69,7 @@ impl BasicTokenizer {
     }
 
     /// Given a vocabulary, encode a string to its equivalent tokens.
-    pub fn encode(&self, text: &str) -> Vec<TokenSize> {
+    fn encode(&self, text: &str) -> Vec<TokenSize> {
         let mut tokens = str_to_tokens(text);
         for (pair, token) in self.merges.iter() {
             tokens = merge(&tokens, *pair, *token);
@@ -77,7 +79,7 @@ impl BasicTokenizer {
     }
 
     /// Given a vocabulary, decode an array of token ids to the string representation.
-    pub fn decode(&self, tokens: &[TokenSize]) -> String {
+    fn decode(&self, tokens: &[TokenSize]) -> String {
         let mut string: Vec<TokenSize> = Vec::new();
         for tid in tokens {
             if let Some(decoded) = self.vocab.get(tid) {

@@ -8,7 +8,9 @@ pub type TokenSize = u32;
 
 pub trait Tokenizer {
     fn train(&mut self, text: &str, vocab_size: usize);
+    /// Given a vocabulary, encode a string to its equivalent tokens.
     fn encode(&self, text: &str) -> Vec<TokenSize>;
+    /// Given a vocabulary, decode an array of token ids to the string representation.
     fn decode(&self, tokens: &[TokenSize]) -> String;
 }
 
