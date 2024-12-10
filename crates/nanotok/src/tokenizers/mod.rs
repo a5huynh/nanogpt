@@ -2,6 +2,7 @@
 use indexmap::IndexMap;
 
 pub mod basic;
+pub mod regex;
 
 pub type BytePair = (u32, u32);
 pub type TokenSize = u32;

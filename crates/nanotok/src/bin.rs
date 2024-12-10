@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Subcommand, Parser};
-use nanotok::tokenizers::{basic::BasicTokenizer, Tokenizer};
+use nanotok::{tokenizers::{basic::BasicTokenizer, regex::RegexTokenizer, Tokenizer}, GPT2_SPLIT_PATTERN, GPT4_SPLIT_PATTERN};
 use strum_macros::{Display, EnumString};
 
 #[derive(Clone, EnumString, Display)]
@@ -48,7 +48,13 @@ async fn main() -> anyhow::Result<()> {
     match args.subcommand {
         Commands::Train { text_file } => {
             log::info!("Training <{}> using {text_file:?}", args.model);
-            let mut tokenizer = BasicTokenizer::new();
+
+            let mut tokenizer: Box<dyn Tokenizer> = match args.model {
+                TokenizerModel::BasicTokenizer => Box::new(BasicTokenizer::new()),
+                TokenizerModel::Gpt2 => Box::new(RegexTokenizer::new(GPT2_SPLIT_PATTERN)),
+                TokenizerModel::Gpt4 => Box::new(RegexTokenizer::new(GPT4_SPLIT_PATTERN)),
+            };
+
             let text = std::fs::read_to_string(text_file)?;
 
             log::info!("Training w/ {} chars", text.len());
