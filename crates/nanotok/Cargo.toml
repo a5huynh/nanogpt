@@ -12,7 +12,7 @@ log = "0.4.22"
 pretty_env_logger = "0.5.0"
 strum = "0.26.3"
 strum_macros = "0.26.4"
-tiktoken = "1.0.1"
+tokenizers = { version = "0.21.0", features = ["http"] }
 tokio = { version = "1", features = ["full"] }
 
 [lib]
@@ -22,3 +22,8 @@ path = "src/lib.rs"
 [[bin]]
 name = "nanotok-cli"
 path = "src/bin.rs"
+
+
+[dev-dependencies]
+# Only use to compare our implementation with the actual
+tiktoken-rs = "0.6.0"
