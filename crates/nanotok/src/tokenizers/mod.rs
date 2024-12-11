@@ -91,5 +91,4 @@ mod tests {
         let encoded = String::from_utf8_lossy(&pair);
         assert_eq!(encoded.to_string(), "cc".to_string());
     }
-
 }

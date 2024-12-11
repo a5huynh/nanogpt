@@ -1,14 +1,17 @@
 use std::path::PathBuf;
 
-use clap::{Subcommand, Parser};
-use nanotok::{tokenizers::{basic::BasicTokenizer, regex::RegexTokenizer, Tokenizer}, GPT2_SPLIT_PATTERN, GPT4_SPLIT_PATTERN};
+use clap::{Parser, Subcommand};
+use nanotok::{
+    tokenizers::{basic::BasicTokenizer, regex::RegexTokenizer, Tokenizer},
+    GPT2_SPLIT_PATTERN, GPT4_SPLIT_PATTERN,
+};
 use strum_macros::{Display, EnumString};
 
 #[derive(Clone, EnumString, Display)]
 pub enum TokenizerModel {
     BasicTokenizer,
     Gpt2,
-    Gpt4
+    Gpt4,
 }
 
 impl Default for TokenizerModel {
@@ -20,9 +23,7 @@ impl Default for TokenizerModel {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Train model from scratch, saving the model to <models/latest.bin>
-    Train {
-        text_file: PathBuf
-    }
+    Train { text_file: PathBuf },
 }
 
 #[derive(Parser)]
@@ -31,9 +32,8 @@ pub struct Args {
     #[arg(short, long, default_value_t = Default::default())]
     pub model: TokenizerModel,
     #[command(subcommand)]
-    pub subcommand: Commands
+    pub subcommand: Commands,
 }
-
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

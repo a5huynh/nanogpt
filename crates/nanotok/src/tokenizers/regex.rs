@@ -6,13 +6,14 @@ use super::{merge, str_to_tokens, BytePair, TokenSize, Tokenizer};
 /// Given a list of tokens, replace any byte pairs with the replacement id and
 /// return the new list.
 pub fn merge_chunks(chunks: &[Vec<u32>], pair: BytePair, replacement_id: u32) -> Vec<Vec<u32>> {
-    chunks.iter()
-        .map(|chunk| merge(&chunk, pair, replacement_id))
+    chunks
+        .iter()
+        .map(|chunk| merge(chunk, pair, replacement_id))
         .collect::<Vec<_>>()
 }
 
 /// Returns the most common pair in a set of chunks and the number of times that pair occurs.
-fn most_common_pair(chunks: &[Vec<u32>]) -> Option<(BytePair, usize)>{
+fn most_common_pair(chunks: &[Vec<u32>]) -> Option<(BytePair, usize)> {
     let mut counts: IndexMap<BytePair, usize> = IndexMap::new();
 
     for chunk in chunks {
@@ -39,7 +40,7 @@ fn most_common_pair(chunks: &[Vec<u32>]) -> Option<(BytePair, usize)>{
 pub struct RegexTokenizer {
     pattern: Regex,
     vocab: IndexMap<u32, Vec<u32>>,
-    merges: IndexMap<BytePair, u32>
+    merges: IndexMap<BytePair, u32>,
 }
 
 impl RegexTokenizer {
@@ -48,7 +49,7 @@ impl RegexTokenizer {
         // no patterns.
         let mut vocab = IndexMap::new();
         for idx in 0..255 {
-            vocab.insert(idx as u32, vec![idx]);
+            vocab.insert(idx, vec![idx]);
         }
 
         Self {
@@ -74,15 +75,18 @@ impl Tokenizer for RegexTokenizer {
         let num_merges = vocab_size - 256;
 
         // First split the text up into chunks
-        let chunks = self.pattern.find_iter(text)
+        let chunks = self
+            .pattern
+            .find_iter(text)
             .flat_map(|x| x.ok())
             .map(|x| x.as_str().to_string())
             .collect::<Vec<_>>();
 
         // Then we encode each chunk into tokens
-        let mut chunks = chunks.iter()
-                .map(|string| str_to_tokens(&string))
-                .collect::<Vec<_>>();
+        let mut chunks = chunks
+            .iter()
+            .map(|string| str_to_tokens(string))
+            .collect::<Vec<_>>();
 
         // Maps byte pairs to their new index
         let mut merges: IndexMap<BytePair, u32> = IndexMap::new();
@@ -101,10 +105,7 @@ impl Tokenizer for RegexTokenizer {
             let p1 = self.vocab.get(&bp.1).unwrap();
             p0.extend(p1);
 
-            self.vocab.insert(
-                *idx,
-                p0
-            );
+            self.vocab.insert(*idx, p0);
         }
     }
 
@@ -128,16 +129,14 @@ mod tests {
     #[test]
     fn test_against_tiktoken() {
         // Test creating a vocab with the text
-        let text =  "hello world!!!? (안녕하세요!) lol123 😉";
+        let text = "hello world!!!? (안녕하세요!) lol123 😉";
         let tokenizer = cl100k_base().unwrap();
         let encoded = tokenizer.encode(text, Default::default());
         dbg!(&encoded);
 
-        let decoded = tokenizer.decode(encoded)
-            .unwrap();
+        let decoded = tokenizer.decode(encoded).unwrap();
         dbg!(decoded);
 
         assert_eq!(0, 1);
     }
 }
-
