@@ -1,7 +1,9 @@
+use std::path::PathBuf;
+
 use fancy_regex::Regex;
 use indexmap::IndexMap;
 
-use super::{merge, str_to_tokens, BytePair, TokenSize, Tokenizer};
+use super::{merge, str_to_tokens, BytePair, TokenId, TokenSize, Tokenizer, TokenizerModel};
 
 /// Given a list of tokens, replace any byte pairs with the replacement id and
 /// return the new list.
@@ -109,16 +111,57 @@ impl Tokenizer for RegexTokenizer {
         }
     }
 
-    fn encode(&self, _text: &str) -> Vec<TokenSize> {
+    fn encode(&self, _text: &str) -> Vec<TokenId> {
         todo!()
     }
 
-    fn decode(&self, _tokens: &[TokenSize]) -> String {
+    fn decode(&self, _tokens: &[TokenId]) -> String {
         todo!()
     }
 
     fn vocab(&self) -> IndexMap<TokenSize, Vec<u32>> {
         self.vocab.clone()
+    }
+
+    fn save(&self, path: PathBuf) -> anyhow::Result<()> {
+        let model = TokenizerModel {
+            version: super::ModelVersion::Version1,
+            pattern: Some(self.pattern.to_string()),
+            vocab: self
+                .vocab
+                .iter()
+                .map(|(token_id, bytes)| (*token_id, bytes.to_owned()))
+                .collect(),
+            merges: self
+                .merges
+                .iter()
+                .map(|(byte_pair, token_id)| (*byte_pair, *token_id))
+                .collect(),
+        };
+
+        std::fs::write(path, serde_json::to_string_pretty(&model)?)?;
+        Ok(())
+    }
+
+    fn load(&mut self, path: PathBuf) -> anyhow::Result<()> {
+        let contents = std::fs::read_to_string(path)?;
+        let model = serde_json::from_str::<TokenizerModel>(&contents)?;
+
+        let pattern = model
+            .pattern
+            .ok_or(anyhow::anyhow!("No pattern found in model file"))?;
+        self.pattern = Regex::new(&pattern)?;
+
+        self.vocab.clear();
+        for (token_id, bytes) in model.vocab {
+            self.vocab.insert(token_id, bytes);
+        }
+
+        self.merges.clear();
+        for (pair, token_id) in model.merges {
+            self.merges.insert(pair, token_id);
+        }
+        Ok(())
     }
 }
 

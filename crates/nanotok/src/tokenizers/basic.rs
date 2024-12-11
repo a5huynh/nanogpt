@@ -1,14 +1,18 @@
+use std::path::PathBuf;
+
 use indexmap::IndexMap;
 
-use super::{merge, most_common_pair, str_to_tokens, BytePair, TokenSize, Tokenizer};
+use super::{
+    merge, most_common_pair, str_to_tokens, BytePair, TokenId, TokenSize, Tokenizer, TokenizerModel,
+};
 
 /// Implementation of byte-pair encoding as an excercise.
 /// Ideally if you need an actually tokenizer trained on real data,
 /// use something like tiktoken.
 pub struct BasicTokenizer {
     // Reverse lookup token -> bytes
-    vocab: IndexMap<u32, Vec<u32>>,
-    merges: IndexMap<BytePair, u32>,
+    vocab: IndexMap<TokenId, Vec<u32>>,
+    merges: IndexMap<BytePair, TokenId>,
 }
 
 impl Default for BasicTokenizer {
@@ -97,6 +101,42 @@ impl Tokenizer for BasicTokenizer {
 
     fn vocab(&self) -> IndexMap<TokenSize, Vec<u32>> {
         self.vocab.clone()
+    }
+
+    fn save(&self, path: PathBuf) -> anyhow::Result<()> {
+        let model = TokenizerModel {
+            version: super::ModelVersion::Version1,
+            pattern: None,
+            vocab: self
+                .vocab
+                .iter()
+                .map(|(token_id, bytes)| (*token_id, bytes.to_owned()))
+                .collect(),
+            merges: self
+                .merges
+                .iter()
+                .map(|(byte_pair, token_id)| (*byte_pair, *token_id))
+                .collect(),
+        };
+
+        std::fs::write(path, serde_json::to_string_pretty(&model)?)?;
+        Ok(())
+    }
+
+    fn load(&mut self, path: PathBuf) -> anyhow::Result<()> {
+        let contents = std::fs::read_to_string(path)?;
+        let model = serde_json::from_str::<TokenizerModel>(&contents)?;
+
+        self.vocab.clear();
+        for (token_id, bytes) in model.vocab {
+            self.vocab.insert(token_id, bytes);
+        }
+
+        self.merges.clear();
+        for (pair, token_id) in model.merges {
+            self.merges.insert(pair, token_id);
+        }
+        Ok(())
     }
 }
 

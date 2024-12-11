@@ -10,8 +10,12 @@ fancy-regex = "0.14.0"
 indexmap = "2.6.0"
 log = "0.4.22"
 pretty_env_logger = "0.5.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 strum = "0.26.3"
 strum_macros = "0.26.4"
+# Only use to compare our implementation with the actual
+tiktoken-rs = "0.6.0"
 tokenizers = { version = "0.21.0", features = ["http"] }
 tokio = { version = "1", features = ["full"] }
 
@@ -22,8 +26,3 @@ path = "src/lib.rs"
 [[bin]]
 name = "nanotok-cli"
 path = "src/bin.rs"
-
-
-[dev-dependencies]
-# Only use to compare our implementation with the actual
-tiktoken-rs = "0.6.0"

@@ -1,20 +1,40 @@
+use std::path::PathBuf;
+
 // Rust std HashMap does not preserve insertion order.
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
 pub mod basic;
 pub mod gpt4;
 pub mod regex;
 
 pub type BytePair = (u32, u32);
+pub type TokenId = u32;
 pub type TokenSize = u32;
+
+#[derive(Deserialize, Serialize)]
+pub enum ModelVersion {
+    Version1,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct TokenizerModel {
+    version: ModelVersion,
+    pattern: Option<String>,
+    vocab: Vec<(TokenId, Vec<u32>)>,
+    merges: Vec<(BytePair, TokenId)>,
+}
 
 pub trait Tokenizer {
     fn train(&mut self, text: &str, vocab_size: usize);
     /// Given a vocabulary, encode a string to its equivalent tokens.
     fn encode(&self, text: &str) -> Vec<TokenSize>;
     /// Given a vocabulary, decode an array of token ids to the string representation.
-    fn decode(&self, tokens: &[TokenSize]) -> String;
-    fn vocab(&self) -> IndexMap<TokenSize, Vec<u32>>;
+    fn decode(&self, tokens: &[TokenId]) -> String;
+    fn vocab(&self) -> IndexMap<TokenId, Vec<u32>>;
+
+    fn save(&self, path: PathBuf) -> anyhow::Result<()>;
+    fn load(&mut self, path: PathBuf) -> anyhow::Result<()>;
 }
 
 pub fn str_to_tokens(string: &str) -> Vec<u32> {
