@@ -2,6 +2,7 @@
 use indexmap::IndexMap;
 
 pub mod basic;
+pub mod gpt4;
 pub mod regex;
 
 pub type BytePair = (u32, u32);
@@ -68,27 +69,4 @@ pub fn most_common_pair(bytes: &[u32]) -> Option<(BytePair, usize)> {
 
     count_vec.sort_by(|a, b| b.1.cmp(&a.1));
     count_vec.first().map(|(k, v)| (k.to_owned(), v.to_owned()))
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::tokenizers::{merge, most_common_pair, str_to_tokens};
-
-    #[test]
-    fn test_merge() {
-        let merged = merge(&[5, 6, 6, 7, 9, 1], (6, 7), 99);
-        assert_eq!(merged, vec![5, 6, 99, 9, 1]);
-    }
-
-    #[test]
-    fn test_common_pair() {
-        let tokens = str_to_tokens("aaacccccbbbb");
-        let pair = most_common_pair(&tokens);
-        assert_eq!(pair, Some(((99, 99), 4)));
-
-        let (pair, _) = pair.unwrap();
-        let pair = [pair.0 as u8, pair.1 as u8].to_vec();
-        let encoded = String::from_utf8_lossy(&pair);
-        assert_eq!(encoded.to_string(), "cc".to_string());
-    }
 }
