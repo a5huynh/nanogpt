@@ -39,8 +39,8 @@ pub const EPS: f64 = 1e-5;
 pub const DROPOUT: f32 = 0.2;
 
 pub const CONFIG_FILE: &str = "config.toml";
-pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
-pub const DEFAULT_DATASET_PATH: &str = "./data/input.txt";
+pub const LATEST_MODEL_PATH: &str = "../../models/latest.safetensors";
+pub const DEFAULT_DATASET_PATH: &str = "../../data/input.txt";
 
 #[derive(Deserialize)]
 struct Config {

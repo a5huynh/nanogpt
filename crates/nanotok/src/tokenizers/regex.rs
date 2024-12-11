@@ -178,8 +178,8 @@ mod tests {
         dbg!(&encoded);
 
         let decoded = tokenizer.decode(encoded).unwrap();
-        dbg!(decoded);
+        dbg!(&decoded);
 
-        assert_eq!(0, 1);
+        assert_eq!(text, decoded);
     }
 }

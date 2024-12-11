@@ -4,8 +4,14 @@ use super::Tokenizer;
 
 /// Similar to https://github.com/karpathy/minbpe/blob/master/minbpe/gpt4.py
 /// thie implements a GPT-4 tokenizer as a light wrapper around the RegexTokenizer
-struct PretrainedGTP4Tokenizer {
+pub struct PretrainedGTP4Tokenizer {
     model: CoreBPE,
+}
+
+impl Default for PretrainedGTP4Tokenizer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PretrainedGTP4Tokenizer {
