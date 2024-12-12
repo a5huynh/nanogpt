@@ -39,8 +39,8 @@ pub const EPS: f64 = 1e-5;
 pub const DROPOUT: f32 = 0.2;
 
 pub const CONFIG_FILE: &str = "config.toml";
-pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
-pub const DEFAULT_DATASET_PATH: &str = "./data/input.txt";
+pub const LATEST_MODEL_PATH: &str = "../../models/latest.safetensors";
+pub const DEFAULT_DATASET_PATH: &str = "../../data/input.txt";
 
 #[derive(Deserialize)]
 struct Config {
@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     let device = if args.gpu {
         if cfg!(target_os = "macos") {
             Device::Metal(candle_core::MetalDevice::new(0)?)
-        } else if cfg!(target_os = "windows") {
+        } else if cfg!(target_os = "windows") || cfg!(target_os = "linux") {
             Device::Cuda(candle_core::CudaDevice::new(0)?)
         } else {
             return Err(candle_core::Error::Msg("OS not supported for GPU".into()));
