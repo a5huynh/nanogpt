@@ -9,6 +9,7 @@ use super::{
 /// Implementation of byte-pair encoding as an excercise.
 /// Ideally if you need an actually tokenizer trained on real data,
 /// use something like tiktoken.
+#[derive(Clone)]
 pub struct BasicTokenizer {
     // Reverse lookup token -> bytes
     vocab: IndexMap<TokenId, Vec<u32>>,

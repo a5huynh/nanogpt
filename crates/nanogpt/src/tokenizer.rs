@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 use nanotok::tokenizers::{TokenId, Tokenizer};
@@ -61,8 +61,11 @@ impl Tokenizer for NaiveTokenizer {
     }
 
     fn train(&mut self, text: &str, _vocab_size: usize) {
+        let mut set = HashSet::new();
+        set.extend(text.chars());
+
         self.vocab.clear();
-        self.vocab.extend(text.chars());
+        self.vocab.extend(set.iter());
         self.vocab.sort();
 
         self.lookup.clear();
@@ -74,7 +77,7 @@ impl Tokenizer for NaiveTokenizer {
     fn vocab(&self) -> IndexMap<nanotok::tokenizers::TokenId, Vec<u32>> {
         let mut map = IndexMap::new();
         for (idx, ch) in self.vocab.iter().enumerate() {
-            let mut bytes: Vec<u8> = Vec::new();
+            let mut bytes: Vec<u8> = vec![0];
             ch.encode_utf8(&mut bytes);
             map.insert(idx as TokenId, bytes.iter().map(|x| *x as u32).collect());
         }

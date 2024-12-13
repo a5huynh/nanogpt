@@ -39,6 +39,7 @@ fn most_common_pair(chunks: &[Vec<u32>]) -> Option<(BytePair, usize)> {
     count_vec.first().map(|(k, v)| (k.to_owned(), v.to_owned()))
 }
 
+#[derive(Clone)]
 pub struct RegexTokenizer {
     pattern: Regex,
     vocab: IndexMap<u32, Vec<u32>>,

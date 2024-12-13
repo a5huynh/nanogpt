@@ -1,8 +1,11 @@
 use nanotok::tokenizers::{regex::RegexTokenizer, Tokenizer};
 use serde::Deserialize;
-use tokenizer::NaiveTokenizer;
-use std::{io::{self, Write}, path::{Path, PathBuf}};
+use std::{
+    io::{self, Write},
+    path::{Path, PathBuf},
+};
 use stream::TokenSample;
+use tokenizer::NaiveTokenizer;
 use tokio::sync::mpsc::{self, Sender};
 
 use candle_core::{backend::BackendDevice, Device, Tensor};
@@ -69,6 +72,7 @@ async fn main() -> anyhow::Result<(), GptError> {
     // Initialize stuff
     pretty_env_logger::init();
     let args = cli::Args::parse();
+    let rng = rand_pcg::Pcg32::seed_from_u64(args.seed.unwrap_or(1337));
 
     let device = if args.gpu {
         if cfg!(target_os = "macos") {
@@ -82,13 +86,12 @@ async fn main() -> anyhow::Result<(), GptError> {
         Device::Cpu
     };
 
-    let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-
     let config = Path::new(CONFIG_FILE);
     let hyperparams: Hyperparams = if config.exists() {
-        let config: Config =
-            toml::from_str(&std::fs::read_to_string(config).map_err(|err| GptError::Other(err.to_string()))?)
-                .map_err(GptError::InvalidConfig)?;
+        let config: Config = toml::from_str(
+            &std::fs::read_to_string(config).map_err(|err| GptError::Other(err.to_string()))?,
+        )
+        .map_err(GptError::InvalidConfig)?;
         config.hyperparams
     } else {
         Hyperparams::default()
@@ -97,16 +100,18 @@ async fn main() -> anyhow::Result<(), GptError> {
     // Attemp to load in the tokenizer model that was passed in, otherwise use the
     // naive model.
     let tokenizer: Box<dyn Tokenizer> = if let Some(model) = args.tokenizer {
-        let tok = RegexTokenizer::new("");
+        let mut tok = RegexTokenizer::new("");
         tok.load(model).expect("Unable to load tokenizer model");
         Box::new(tok)
     } else {
-        let tok = NaiveTokenizer::new();
+        let mut tok = NaiveTokenizer::new();
         let content = std::fs::read_to_string(DEFAULT_DATASET_PATH)?;
         tok.train(&content, 0);
 
         Box::new(tok)
     };
+
+    let vocab_size = tokenizer.vocab().len();
 
     match args.subcommand {
         Some(Commands::Generate {
@@ -115,19 +120,21 @@ async fn main() -> anyhow::Result<(), GptError> {
             stream,
             num_tokens,
         }) => {
-            let vocab_size = tokenizer.vocab().len();
             let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab_size);
 
             let latest = Path::new(LATEST_MODEL_PATH);
 
             if !latest.exists() {
-                return Err(GptError::Other(format!("No model detected @ {}", LATEST_MODEL_PATH)));
+                return Err(GptError::Other(format!(
+                    "No model detected @ {}",
+                    LATEST_MODEL_PATH
+                )));
             }
 
             let tx = if stream.unwrap_or_default() {
                 log::info!("streaming tokens...");
                 let (tx, mut rx) = mpsc::channel::<TokenSample>(32);
-                let vocab = vocab.clone();
+                let tokenizer = tokenizer.clone();
                 let prompt = prompt.clone();
                 tokio::spawn(async move {
                     let prompt = prompt.unwrap_or_default();
@@ -137,8 +144,8 @@ async fn main() -> anyhow::Result<(), GptError> {
                                 print!("{prompt}");
                             }
                             TokenSample::NewSample(sample) => {
-                                let token = vocab.decode(&[sample]);
-                                print!("{}", token.iter().collect::<String>());
+                                let token = tokenizer.decode(&[sample]);
+                                print!("{token}");
                             }
                             TokenSample::End => {
                                 println!();
@@ -155,7 +162,7 @@ async fn main() -> anyhow::Result<(), GptError> {
             };
 
             run_generation(
-                &vocab,
+                tokenizer.as_ref(),
                 &mut model,
                 GenerationOptions {
                     num_tokens: num_tokens.unwrap_or(256),
@@ -168,17 +175,19 @@ async fn main() -> anyhow::Result<(), GptError> {
             .await
         }
         Some(Commands::Train {
-            dataset,
+            dataset_path,
             checkpoint,
             num_steps,
         }) => {
             let mut model =
-                model::BigramModel::new(&hyperparams, DROPOUT, &device, &rng, vocab.len());
+                model::BigramModel::new(&hyperparams, DROPOUT, &device, &rng, vocab_size);
             if let Some(checkpoint) = checkpoint {
                 log::info!("Attempting to load checkpoint {:?}", checkpoint);
                 model.parameters.load(checkpoint)?;
             }
 
+            let data = load_dataset(tokenizer.as_ref(), dataset_path, &device);
+            let mut dataset = Dataset::new(&rng, &data);
             run_training(
                 &mut dataset,
                 &mut model,
@@ -187,10 +196,10 @@ async fn main() -> anyhow::Result<(), GptError> {
 
             // Reload model and set dropout to 0 to test generating
             log::info!("Testing model, generating a string...");
-            let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab.len());
+            let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab_size);
             model.parameters.load(LATEST_MODEL_PATH)?;
             run_generation(
-                &vocab,
+                tokenizer.as_ref(),
                 &mut model,
                 GenerationOptions {
                     num_tokens: 256,
@@ -214,11 +223,11 @@ struct GenerationOptions {
 }
 
 async fn run_generation(
-    tokenizer: &Box<dyn Tokenizer>,
+    tokenizer: &dyn Tokenizer,
     model: &mut BigramModel,
     options: GenerationOptions,
     device: &Device,
-) -> Result<()> {
+) -> Result<(), GptError> {
     log::info!("Loading model from {LATEST_MODEL_PATH}");
     model.parameters.load(LATEST_MODEL_PATH)?;
 
@@ -250,7 +259,11 @@ async fn run_generation(
     Ok(())
 }
 
-fn run_training(dataset: &mut Dataset, model: &mut BigramModel, num_steps: usize) -> Result<()> {
+fn run_training(
+    dataset: &mut Dataset,
+    model: &mut BigramModel,
+    num_steps: usize,
+) -> Result<(), GptError> {
     log::info!("starting model training...");
     model.train(dataset, num_steps)?;
     log::info!("Saving model to {LATEST_MODEL_PATH}");
@@ -258,23 +271,21 @@ fn run_training(dataset: &mut Dataset, model: &mut BigramModel, num_steps: usize
     Ok(())
 }
 
-fn load_dataset(
-    tokenizer: &Box<dyn Tokenizer>,
-    dataset_file: PathBuf,
-    device: &Device
-) -> Tensor {
+fn load_dataset(tokenizer: &dyn Tokenizer, dataset_file: PathBuf, device: &Device) -> Tensor {
     let contents = std::fs::read_to_string(dataset_file).expect("Unable to read input file");
     let data = Tensor::new(tokenizer.encode(&contents), device).expect("Unable to create tensor");
-    let data = data
-        .to_dtype(candle_core::DType::U32)
-        .expect("Unable to cast to U32");
-    data
+    data.to_dtype(candle_core::DType::U32)
+        .expect("Unable to cast to U32")
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{dataset::Dataset, load_dataset, model::Hyperparams, DEFAULT_DATASET_PATH};
+    use crate::{
+        dataset::Dataset, load_dataset, model::Hyperparams, tokenizer::NaiveTokenizer,
+        DEFAULT_DATASET_PATH,
+    };
     use candle_core::{Device, IndexOp, Tensor};
+    use nanotok::tokenizers::Tokenizer;
     use rand::{prelude::Distribution, SeedableRng};
 
     #[test]
@@ -309,24 +320,33 @@ mod test {
     fn test_dataset_loading() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
+        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
 
-        let (vocab, data) = load_dataset(DEFAULT_DATASET_PATH.into(), &device);
+        let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
+        tokenizer.train(&data, 0);
+        assert_eq!(tokenizer.vocab().len(), 65);
+
+        let data = load_dataset(tokenizer.as_ref(), DEFAULT_DATASET_PATH.into(), &device);
         let mut dataset = Dataset::new(&rng, &data);
 
         let (input, target) = dataset.get_validation_batch(1, 100);
 
-        let decoded = vocab.decode(&input.get(0).unwrap().to_vec1().unwrap());
-        dbg!(decoded.iter().collect::<String>());
-        let decoded = vocab.decode(&target.get(0).unwrap().to_vec1().unwrap());
-        dbg!(decoded.iter().collect::<String>());
+        let dec_input = tokenizer.decode(&input.get(0).unwrap().to_vec1().unwrap());
+        assert_eq!(dec_input, "ters.\n\nARIEL:\nPardon, master;\nI will be correspondent to command\nAnd do my spiriting gently.\n\nPROSPE");
+        let dec_target = tokenizer.decode(&target.get(0).unwrap().to_vec1().unwrap());
+        assert_eq!(dec_target, "ers.\n\nARIEL:\nPardon, master;\nI will be correspondent to command\nAnd do my spiriting gently.\n\nPROSPER");
     }
 
     #[test]
     fn test_batching() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
+        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
 
-        let (_, data) = load_dataset(DEFAULT_DATASET_PATH.into(), &device);
+        let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
+        tokenizer.train(&data, 0);
+
+        let data = load_dataset(tokenizer.as_ref(), DEFAULT_DATASET_PATH.into(), &device);
         let mut dataset = Dataset::new(&rng, &data);
 
         // How many independent sequences will we process in parallel
@@ -349,15 +369,21 @@ mod test {
     async fn test_generation() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-        let (vocab, _) = load_dataset(DEFAULT_DATASET_PATH.into(), &device);
+        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
+
+        let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
+        dbg!("training...");
+        tokenizer.train(&data, 0);
 
         let hparams = Hyperparams::default();
-        let mut model = super::model::BigramModel::new(&hparams, 0.0, &device, &rng, vocab.len());
+        let vocab_size = tokenizer.vocab().len();
 
+        let mut model = super::model::BigramModel::new(&hparams, 0.0, &device, &rng, vocab_size);
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
+
         let (generated, _) = model.generate(&test, 10, None).await.unwrap();
         let generated = generated.i((0, ..)).unwrap().to_vec1::<u32>().unwrap();
-        let decoded = vocab.decode(&generated).iter().collect::<String>();
+        let decoded = tokenizer.decode(&generated);
         assert_eq!(decoded.len(), 11);
     }
 }
