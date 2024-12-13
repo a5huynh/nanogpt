@@ -18,12 +18,11 @@ pub enum Commands {
     /// Train model from scratch, saving the model to <models/latest.bin>
     Train {
         #[arg(short, long)]
-        /// Tokenizer model file. If none is specified, assumes naive character
-        /// tokenization.
-        tokenizer: Option<PathBuf>,
-        #[arg(short, long)]
         num_steps: Option<usize>,
-        /// Will attempt to use an existing checkpoint as a starting point vs starting
+        /// Change which dataset is used for training.
+        #[arg(short, long)]
+        dataset: Option<std::path::PathBuf>,
+            /// Will attempt to use an existing checkpoint as a starting point vs starting
         /// from scratch
         #[arg(short, long)]
         checkpoint: Option<std::path::PathBuf>,
@@ -33,11 +32,13 @@ pub enum Commands {
 #[derive(Parser)]
 #[command(version, about)]
 pub struct Args {
+    /// Use gpu (if available).
     #[arg(short, long)]
     pub gpu: bool,
-    /// Change which dataset is used for the vocab + training.
+    /// Tokenizer model file. If none is specified, assumes naive character
+    /// tokenization which will use the contents of the dataset as the vocab.
     #[arg(short, long)]
-    pub dataset: Option<std::path::PathBuf>,
+    pub tokenizer: Option<PathBuf>,
     #[command(subcommand)]
     pub subcommand: Option<Commands>,
 }

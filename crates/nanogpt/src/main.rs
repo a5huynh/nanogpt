@@ -1,17 +1,17 @@
+use nanotok::tokenizers::{regex::RegexTokenizer, Tokenizer};
 use serde::Deserialize;
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+use tokenizer::NaiveTokenizer;
+use std::{io::{self, Write}, path::{Path, PathBuf}};
 use stream::TokenSample;
 use tokio::sync::mpsc::{self, Sender};
 
-use candle_core::{backend::BackendDevice, Device, Result, Tensor};
+use candle_core::{backend::BackendDevice, Device, Tensor};
 use clap::Parser;
 use cli::Commands;
 use dataset::Dataset;
 use model::{BigramModel, Hyperparams};
 use rand::SeedableRng;
+use thiserror::Error;
 
 mod cli;
 mod dataset;
@@ -19,9 +19,8 @@ mod model;
 mod stream;
 mod tokenizer;
 mod utils;
-mod vocab;
+
 use utils::print_probs;
-use vocab::Vocab;
 
 // -- Values used in video for testing.
 // pub const BATCH_SIZE: usize = 32; // B
@@ -43,13 +42,25 @@ pub const CONFIG_FILE: &str = "config.toml";
 pub const LATEST_MODEL_PATH: &str = "../../models/latest.safetensors";
 pub const DEFAULT_DATASET_PATH: &str = "../../data/input.txt";
 
+#[derive(Error, Debug)]
+pub enum GptError {
+    #[error(transparent)]
+    Candle(#[from] candle_core::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error("Invalid config file: {0}")]
+    InvalidConfig(#[from] toml::de::Error),
+    #[error("Other error: {0}")]
+    Other(String),
+}
+
 #[derive(Deserialize)]
 struct Config {
     pub hyperparams: Hyperparams,
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<(), GptError> {
     // Default to info logging if nothing is set.
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
@@ -65,7 +76,7 @@ async fn main() -> Result<()> {
         } else if cfg!(target_os = "windows") || cfg!(target_os = "linux") {
             Device::Cuda(candle_core::CudaDevice::new(0)?)
         } else {
-            return Err(candle_core::Error::Msg("OS not supported for GPU".into()));
+            return Err(GptError::Other("OS not supported for GPU".into()));
         }
     } else {
         Device::Cpu
@@ -73,23 +84,28 @@ async fn main() -> Result<()> {
 
     let rng = rand_pcg::Pcg32::seed_from_u64(1337);
 
-    // Load dataset & start training
-    // todo: use tokenizer model instead of this vocab thing
-    // tokenizer
-    let (vocab, data) = load_dataset(args.dataset.unwrap_or(DEFAULT_DATASET_PATH.into()), &device);
-    log::info!("Vocab [{} chars] | {vocab}", vocab.len());
-
-    let mut dataset = Dataset::new(&rng, &data);
-    dataset.print_stats();
-
     let config = Path::new(CONFIG_FILE);
     let hyperparams: Hyperparams = if config.exists() {
         let config: Config =
-            toml::from_str(&std::fs::read_to_string(config).map_err(candle_core::Error::wrap)?)
-                .map_err(candle_core::Error::wrap)?;
+            toml::from_str(&std::fs::read_to_string(config).map_err(|err| GptError::Other(err.to_string()))?)
+                .map_err(GptError::InvalidConfig)?;
         config.hyperparams
     } else {
         Hyperparams::default()
+    };
+
+    // Attemp to load in the tokenizer model that was passed in, otherwise use the
+    // naive model.
+    let tokenizer: Box<dyn Tokenizer> = if let Some(model) = args.tokenizer {
+        let tok = RegexTokenizer::new("");
+        tok.load(model).expect("Unable to load tokenizer model");
+        Box::new(tok)
+    } else {
+        let tok = NaiveTokenizer::new();
+        let content = std::fs::read_to_string(DEFAULT_DATASET_PATH)?;
+        tok.train(&content, 0);
+
+        Box::new(tok)
     };
 
     match args.subcommand {
@@ -99,14 +115,13 @@ async fn main() -> Result<()> {
             stream,
             num_tokens,
         }) => {
-            let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab.len());
+            let vocab_size = tokenizer.vocab().len();
+            let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab_size);
 
             let latest = Path::new(LATEST_MODEL_PATH);
 
             if !latest.exists() {
-                return Err(candle_core::Error::Msg(format!(
-                    "No model detected @ {LATEST_MODEL_PATH}"
-                )));
+                return Err(GptError::Other(format!("No model detected @ {}", LATEST_MODEL_PATH)));
             }
 
             let tx = if stream.unwrap_or_default() {
@@ -153,7 +168,7 @@ async fn main() -> Result<()> {
             .await
         }
         Some(Commands::Train {
-            tokenizer,
+            dataset,
             checkpoint,
             num_steps,
         }) => {
@@ -199,7 +214,7 @@ struct GenerationOptions {
 }
 
 async fn run_generation(
-    vocab: &Vocab,
+    tokenizer: &Box<dyn Tokenizer>,
     model: &mut BigramModel,
     options: GenerationOptions,
     device: &Device,
@@ -210,7 +225,7 @@ async fn run_generation(
     // Use the trained model to generate some text
     log::info!("Generating");
     let ctxt = if let Some(prompt) = options.prompt {
-        let decoded = vocab.encode(&prompt);
+        let decoded = tokenizer.encode(&prompt);
         Tensor::new(decoded.clone(), device)?.reshape((1, decoded.len()))?
     } else {
         Tensor::zeros((1, 1), candle_core::DType::U32, device)?
@@ -223,11 +238,11 @@ async fn run_generation(
     // Only decode returned output if we're not streaming the result back.
     if options.stream.is_none() {
         let generated = generated.get(0)?.to_vec1()?;
-        let decoded = vocab.decode(&generated).iter().collect::<String>();
+        let decoded = tokenizer.decode(&generated);
         log::info!("Generated:\n{decoded}");
         if options.print_probs {
             for prob in probs {
-                print_probs(vocab, &prob);
+                print_probs(tokenizer, &prob);
             }
         }
     }
@@ -243,14 +258,17 @@ fn run_training(dataset: &mut Dataset, model: &mut BigramModel, num_steps: usize
     Ok(())
 }
 
-fn load_dataset(dataset_file: PathBuf, device: &Device) -> (Vocab, Tensor) {
+fn load_dataset(
+    tokenizer: &Box<dyn Tokenizer>,
+    dataset_file: PathBuf,
+    device: &Device
+) -> Tensor {
     let contents = std::fs::read_to_string(dataset_file).expect("Unable to read input file");
-    let vocab = Vocab::from_content(&contents);
-    let data = Tensor::new(vocab.encode(&contents), device).expect("Unable to create tensor");
+    let data = Tensor::new(tokenizer.encode(&contents), device).expect("Unable to create tensor");
     let data = data
         .to_dtype(candle_core::DType::U32)
         .expect("Unable to cast to U32");
-    (vocab, data)
+    data
 }
 
 #[cfg(test)]
