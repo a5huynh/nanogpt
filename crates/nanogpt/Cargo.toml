@@ -4,8 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = { workspace = true }
 clap = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
+nanotok = { path = "../nanotok" }
 pretty_env_logger = { workspace = true }
 rand = "0.8.5"
 rand_pcg = "0.3.1"

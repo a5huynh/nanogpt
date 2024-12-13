@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Subcommand)]
@@ -15,6 +17,10 @@ pub enum Commands {
     },
     /// Train model from scratch, saving the model to <models/latest.bin>
     Train {
+        #[arg(short, long)]
+        /// Tokenizer model file. If none is specified, assumes naive character
+        /// tokenization.
+        tokenizer: Option<PathBuf>,
         #[arg(short, long)]
         num_steps: Option<usize>,
         /// Will attempt to use an existing checkpoint as a starting point vs starting

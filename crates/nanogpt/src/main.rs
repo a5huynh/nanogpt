@@ -17,6 +17,7 @@ mod cli;
 mod dataset;
 mod model;
 mod stream;
+mod tokenizer;
 mod utils;
 mod vocab;
 use utils::print_probs;
@@ -71,7 +72,10 @@ async fn main() -> Result<()> {
     };
 
     let rng = rand_pcg::Pcg32::seed_from_u64(1337);
+
     // Load dataset & start training
+    // todo: use tokenizer model instead of this vocab thing
+    // tokenizer
     let (vocab, data) = load_dataset(args.dataset.unwrap_or(DEFAULT_DATASET_PATH.into()), &device);
     log::info!("Vocab [{} chars] | {vocab}", vocab.len());
 
@@ -149,6 +153,7 @@ async fn main() -> Result<()> {
             .await
         }
         Some(Commands::Train {
+            tokenizer,
             checkpoint,
             num_steps,
         }) => {

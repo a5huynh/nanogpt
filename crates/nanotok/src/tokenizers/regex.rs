@@ -175,11 +175,7 @@ mod tests {
         let text = "hello world!!!? (안녕하세요!) lol123 😉";
         let tokenizer = cl100k_base().unwrap();
         let encoded = tokenizer.encode(text, Default::default());
-        dbg!(&encoded);
-
         let decoded = tokenizer.decode(encoded).unwrap();
-        dbg!(&decoded);
-
         assert_eq!(text, decoded);
     }
 }

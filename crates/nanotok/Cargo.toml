@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = { workspace = true }
 clap = { workspace = true }
 fancy-regex = "0.14.0"
-indexmap = "2.6.0"
+indexmap = { workspace = true }
 log = { workspace = true }
 pretty_env_logger = { workspace = true }
 serde = { workspace = true }
