@@ -105,7 +105,7 @@ impl Tokenizer for RegexTokenizer {
 
         // Maps byte pairs to their new index
         let mut merges: IndexMap<BytePair, u32> = IndexMap::new();
-        for merge_id in 0..num_merges {
+        for merge_id in 0..=num_merges {
             if let Some((pair, _)) = most_common_pair(&chunks) {
                 let replacement_id = idx + merge_id as u32;
                 chunks = merge_chunks(&chunks, pair, replacement_id);
