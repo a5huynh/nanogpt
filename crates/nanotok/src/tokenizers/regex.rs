@@ -46,6 +46,18 @@ pub struct RegexTokenizer {
     merges: IndexMap<BytePair, u32>,
 }
 
+impl std::fmt::Display for RegexTokenizer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<RegexTokenizer vocab_size={}, merges={}, pattern={}>",
+            self.vocab.len(),
+            self.merges.len(),
+            self.pattern
+        )
+    }
+}
+
 impl RegexTokenizer {
     pub fn new(pattern: &str) -> Self {
         // By default, the vocav size is represented by 256 (all bytes) with no merges,
@@ -112,12 +124,27 @@ impl Tokenizer for RegexTokenizer {
         }
     }
 
-    fn encode(&self, _text: &str) -> Vec<TokenId> {
-        todo!()
+    fn encode(&self, text: &str) -> Vec<TokenId> {
+        let mut tokens = str_to_tokens(text);
+        for (pair, token) in self.merges.iter() {
+            tokens = merge(&tokens, *pair, *token);
+        }
+
+        tokens
     }
 
-    fn decode(&self, _tokens: &[TokenId]) -> String {
-        todo!()
+    fn decode(&self, tokens: &[TokenId]) -> String {
+        let mut string: Vec<TokenSize> = Vec::new();
+        for tid in tokens {
+            if let Some(decoded) = self.vocab.get(tid) {
+                string.extend(decoded);
+            } else {
+                log::warn!("Unknown token id = {tid}");
+            }
+        }
+
+        let bytes = string.iter().map(|x| *x as u8).collect::<Vec<u8>>();
+        String::from_utf8_lossy(&bytes).to_string()
     }
 
     fn vocab(&self) -> IndexMap<TokenSize, Vec<u32>> {

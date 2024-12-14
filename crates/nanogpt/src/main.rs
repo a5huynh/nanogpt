@@ -42,8 +42,8 @@ pub const EPS: f64 = 1e-5;
 pub const DROPOUT: f32 = 0.2;
 
 pub const CONFIG_FILE: &str = "config.toml";
-pub const LATEST_MODEL_PATH: &str = "../../models/latest.safetensors";
-pub const DEFAULT_DATASET_PATH: &str = "../../data/input.txt";
+pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
+pub const DEFAULT_DATASET_PATH: &str = "./data/input.txt";
 
 #[derive(Error, Debug)]
 pub enum GptError {
@@ -114,12 +114,12 @@ async fn main() -> anyhow::Result<(), GptError> {
     let vocab_size = tokenizer.vocab().len();
 
     match args.subcommand {
-        Some(Commands::Generate {
+        Commands::Generate {
             print_probs,
             prompt,
             stream,
             num_tokens,
-        }) => {
+        } => {
             let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab_size);
 
             let latest = Path::new(LATEST_MODEL_PATH);
@@ -174,11 +174,16 @@ async fn main() -> anyhow::Result<(), GptError> {
             )
             .await
         }
-        Some(Commands::Train {
+        Commands::Train {
             dataset_path,
             checkpoint,
             num_steps,
-        }) => {
+        } => {
+            log::info!("===== Starting training ====");
+            log::info!("GPU: {}", if args.gpu { "ON" } else { "OFF" });
+            log::info!("Tokenizer: {}", &tokenizer);
+            log::info!("{}", &hyperparams);
+
             let mut model =
                 model::BigramModel::new(&hyperparams, DROPOUT, &device, &rng, vocab_size);
             if let Some(checkpoint) = checkpoint {
@@ -211,7 +216,6 @@ async fn main() -> anyhow::Result<(), GptError> {
             )
             .await
         }
-        None => Ok(()),
     }
 }
 
@@ -264,7 +268,7 @@ fn run_training(
     model: &mut BigramModel,
     num_steps: usize,
 ) -> Result<(), GptError> {
-    log::info!("starting model training...");
+    log::info!("starting model training, running for {num_steps} steps");
     model.train(dataset, num_steps)?;
     log::info!("Saving model to {LATEST_MODEL_PATH}");
     model.parameters.save(LATEST_MODEL_PATH)?;

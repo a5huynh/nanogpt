@@ -11,6 +11,12 @@ pub struct PretrainedGTP4Tokenizer {
     model: Arc<CoreBPE>,
 }
 
+impl std::fmt::Display for PretrainedGTP4Tokenizer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<PretrainedGTP4Tokenizer>")
+    }
+}
+
 impl Default for PretrainedGTP4Tokenizer {
     fn default() -> Self {
         Self::new()

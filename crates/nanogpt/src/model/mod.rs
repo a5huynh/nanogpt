@@ -25,6 +25,16 @@ pub struct Hyperparams {
     pub num_layers: usize,
 }
 
+impl std::fmt::Display for Hyperparams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Hyperparams: batch_size={}, block_size={}, num_embed={}, num_heads={}, num_layers = {}",
+            self.batch_size, self.block_size, self.num_embed, self.num_heads, self.num_layers
+        )
+    }
+}
+
 impl Hyperparams {
     pub fn head_size(&self) -> usize {
         self.num_embed / self.num_heads
@@ -130,7 +140,8 @@ impl BigramModel {
             let loss = utils::estimate_loss(&logits, &target)?;
             // Combines loss.backward() & optimizer.step() from pytorch.
             optimizer.backward_step(&loss)?;
-            if step % 100 == 0 || step == num_steps - 1 {
+            // Go at least one step before printing out any stats.
+            if step > 0 && (step == 1 || step % 100 == 0 || step == num_steps - 1) {
                 let train_loss = loss.to_scalar::<f32>()?;
                 let (val_input, val_target) = dataset
                     .get_validation_batch(self.hyperparams.batch_size, self.hyperparams.block_size);

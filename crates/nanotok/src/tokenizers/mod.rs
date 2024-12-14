@@ -25,7 +25,7 @@ pub struct TokenizerModel {
     merges: Vec<(BytePair, TokenId)>,
 }
 
-pub trait Tokenizer: TokenizerClone + Send {
+pub trait Tokenizer: TokenizerClone + std::fmt::Display + Send {
     fn train(&mut self, text: &str, vocab_size: usize);
     /// Given a vocabulary, encode a string to its equivalent tokens.
     fn encode(&self, text: &str) -> Vec<TokenSize>;

@@ -16,6 +16,17 @@ pub struct BasicTokenizer {
     merges: IndexMap<BytePair, TokenId>,
 }
 
+impl std::fmt::Display for BasicTokenizer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<BasicTokenizer vocab_size={}, merges={}>",
+            self.vocab.len(),
+            self.merges.len()
+        )
+    }
+}
+
 impl Default for BasicTokenizer {
     fn default() -> Self {
         Self::new()

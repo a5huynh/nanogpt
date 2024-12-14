@@ -13,7 +13,8 @@ impl std::fmt::Display for NaiveTokenizer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "<{}>",
+            "<NaiveTokenizer vocab_size={}, vocab=\"{}\">",
+            self.vocab.len(),
             self.vocab.iter().collect::<String>().escape_default()
         )
     }

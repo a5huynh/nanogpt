@@ -42,5 +42,5 @@ pub struct Args {
     #[arg(short, long)]
     pub tokenizer: Option<PathBuf>,
     #[command(subcommand)]
-    pub subcommand: Option<Commands>,
+    pub subcommand: Commands,
 }
