@@ -12,7 +12,7 @@ use candle_core::{backend::BackendDevice, Device, Tensor};
 use clap::Parser;
 use cli::Commands;
 use dataset::Dataset;
-use model::{BigramModel, Hyperparams};
+use model::{BigramModel, Hyperparams, TrainingConfig};
 use rand::SeedableRng;
 use thiserror::Error;
 
@@ -36,10 +36,7 @@ use utils::print_probs;
 // ------
 
 pub const LEARNING_RATE: f64 = 3e-4;
-
 pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
-pub const EPS: f64 = 1e-5;
-pub const DROPOUT: f32 = 0.2;
 
 pub const CONFIG_FILE: &str = "config.toml";
 pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
@@ -57,9 +54,16 @@ pub enum GptError {
     Other(String),
 }
 
-#[derive(Deserialize)]
-struct Config {
+#[derive(Clone, Default, Deserialize)]
+pub struct Config {
+    pub training: TrainingConfig,
     pub hyperparams: Hyperparams,
+}
+
+impl std::fmt::Display for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}\n{}", self.training, self.hyperparams)
+    }
 }
 
 #[tokio::main]
@@ -87,14 +91,14 @@ async fn main() -> anyhow::Result<(), GptError> {
     };
 
     let config = Path::new(CONFIG_FILE);
-    let hyperparams: Hyperparams = if config.exists() {
+    let config = if config.exists() {
         let config: Config = toml::from_str(
             &std::fs::read_to_string(config).map_err(|err| GptError::Other(err.to_string()))?,
         )
         .map_err(GptError::InvalidConfig)?;
-        config.hyperparams
+        config
     } else {
-        Hyperparams::default()
+        Config::default()
     };
 
     // Attemp to load in the tokenizer model that was passed in, otherwise use the
@@ -120,7 +124,7 @@ async fn main() -> anyhow::Result<(), GptError> {
             stream,
             num_tokens,
         } => {
-            let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab_size);
+            let mut model = model::BigramModel::new(&config, 0.0, &device, &rng, vocab_size);
 
             let latest = Path::new(LATEST_MODEL_PATH);
 
@@ -182,10 +186,15 @@ async fn main() -> anyhow::Result<(), GptError> {
             log::info!("===== Starting training ====");
             log::info!("GPU: {}", if args.gpu { "ON" } else { "OFF" });
             log::info!("Tokenizer: {}", &tokenizer);
-            log::info!("{}", &hyperparams);
+            log::info!("{}", &config);
 
-            let mut model =
-                model::BigramModel::new(&hyperparams, DROPOUT, &device, &rng, vocab_size);
+            let mut model = model::BigramModel::new(
+                &config,
+                config.training.dropout,
+                &device,
+                &rng,
+                vocab_size,
+            );
             if let Some(checkpoint) = checkpoint {
                 log::info!("Attempting to load checkpoint {:?}", checkpoint);
                 model.parameters.load(checkpoint)?;
@@ -201,7 +210,7 @@ async fn main() -> anyhow::Result<(), GptError> {
 
             // Reload model and set dropout to 0 to test generating
             log::info!("Testing model, generating a string...");
-            let mut model = model::BigramModel::new(&hyperparams, 0.0, &device, &rng, vocab_size);
+            let mut model = model::BigramModel::new(&config, 0.0, &device, &rng, vocab_size);
             model.parameters.load(LATEST_MODEL_PATH)?;
             run_generation(
                 tokenizer.as_ref(),
