@@ -1,8 +1,8 @@
-use crate::vocab::TokenSize;
+use nanotok::tokenizers::TokenId;
 
 #[derive(Debug)]
 pub enum TokenSample {
     Start,
-    NewSample(TokenSize),
+    NewSample(TokenId),
     End,
 }

@@ -1,3 +1,8 @@
+[training]
+dropout = 0.2
+eps = 1e-5
+learning_rate = 3e-4
+
 [hyperparams]
 # Technically only for training but we'll keep it here.
 batch_size = 8

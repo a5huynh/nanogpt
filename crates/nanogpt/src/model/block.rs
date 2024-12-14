@@ -1,9 +1,9 @@
 use candle_core::{Device, Result, Tensor};
 use candle_nn::{linear_no_bias, ops, seq, Activation, LayerNorm, Module, Sequential, VarBuilder};
 
-use crate::EPS;
+use crate::Config;
 
-use super::{head::MultiHeadAttention, Hyperparams};
+use super::head::MultiHeadAttention;
 
 pub const FEED_FORWARD_OUT_SCALE: usize = 4;
 
@@ -16,27 +16,36 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn new(
-        hparams: &Hyperparams,
-        dropout: f32,
-        device: &Device,
-        var_builder: VarBuilder,
-    ) -> Self {
+    pub fn new(config: &Config, dropout: f32, device: &Device, var_builder: VarBuilder) -> Self {
         Self {
             attention: MultiHeadAttention::new(
-                hparams,
+                &config.hyperparams,
                 dropout,
                 device,
                 var_builder.push_prefix("attention"),
             ),
-            feed_forward: FeedForward::new(hparams, dropout, var_builder.push_prefix("ffwd")),
+            feed_forward: FeedForward::new(
+                config.hyperparams.num_embed,
+                dropout,
+                var_builder.push_prefix("ffwd"),
+            ),
             layer_norm1: LayerNorm::new_no_bias(
-                Tensor::ones(hparams.num_embed, candle_core::DType::F32, device).unwrap(),
-                EPS,
+                Tensor::ones(
+                    config.hyperparams.num_embed,
+                    candle_core::DType::F32,
+                    device,
+                )
+                .unwrap(),
+                config.training.eps,
             ),
             layer_norm2: LayerNorm::new_no_bias(
-                Tensor::ones(hparams.num_embed, candle_core::DType::F32, device).unwrap(),
-                EPS,
+                Tensor::ones(
+                    config.hyperparams.num_embed,
+                    candle_core::DType::F32,
+                    device,
+                )
+                .unwrap(),
+                config.training.eps,
             ),
         }
     }
@@ -56,12 +65,12 @@ pub struct FeedForward {
 }
 
 impl FeedForward {
-    pub fn new(hparams: &Hyperparams, dropout: f32, var_builder: VarBuilder) -> Self {
+    pub fn new(num_embed: usize, dropout: f32, var_builder: VarBuilder) -> Self {
         let net = seq()
             .add(
                 linear_no_bias(
-                    hparams.num_embed,
-                    FEED_FORWARD_OUT_SCALE * hparams.num_embed,
+                    num_embed,
+                    FEED_FORWARD_OUT_SCALE * num_embed,
                     var_builder.push_prefix("linear1"),
                 )
                 .expect("Unable to create linear layer"),
@@ -69,8 +78,8 @@ impl FeedForward {
             .add(Activation::Relu)
             .add(
                 linear_no_bias(
-                    FEED_FORWARD_OUT_SCALE * hparams.num_embed,
-                    hparams.num_embed,
+                    FEED_FORWARD_OUT_SCALE * num_embed,
+                    num_embed,
                     var_builder.push_prefix("projection"),
                 )
                 .expect("Unable to create linear layer"),

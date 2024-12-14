@@ -1,11 +1,20 @@
+use std::sync::Arc;
+
 use tiktoken_rs::{cl100k_base, CoreBPE};
 
 use super::Tokenizer;
 
 /// Similar to https://github.com/karpathy/minbpe/blob/master/minbpe/gpt4.py
 /// thie implements a GPT-4 tokenizer as a light wrapper around the RegexTokenizer
+#[derive(Clone)]
 pub struct PretrainedGTP4Tokenizer {
-    model: CoreBPE,
+    model: Arc<CoreBPE>,
+}
+
+impl std::fmt::Display for PretrainedGTP4Tokenizer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<PretrainedGTP4Tokenizer>")
+    }
 }
 
 impl Default for PretrainedGTP4Tokenizer {
@@ -17,7 +26,7 @@ impl Default for PretrainedGTP4Tokenizer {
 impl PretrainedGTP4Tokenizer {
     pub fn new() -> Self {
         Self {
-            model: cl100k_base().unwrap(),
+            model: Arc::new(cl100k_base().unwrap()),
         }
     }
 }

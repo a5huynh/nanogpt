@@ -10,11 +10,38 @@ use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 
 use super::utils;
-use crate::{dataset::Dataset, stream::TokenSample, EPS, LEARNING_RATE};
+use crate::{dataset::Dataset, stream::TokenSample, Config};
 
 pub mod block;
 pub mod head;
 pub mod norm;
+
+#[derive(Clone, Deserialize)]
+pub struct TrainingConfig {
+    pub dropout: f32,
+    pub eps: f64,
+    pub learning_rate: f64,
+}
+
+impl std::fmt::Display for TrainingConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TrainingConfig: dropout={}, eps={}, learning_rate={}",
+            self.dropout, self.eps, self.learning_rate
+        )
+    }
+}
+
+impl Default for TrainingConfig {
+    fn default() -> Self {
+        Self {
+            dropout: 0.2,
+            eps: 1e-5,
+            learning_rate: 3e-4,
+        }
+    }
+}
 
 #[derive(Clone, Deserialize)]
 pub struct Hyperparams {
@@ -23,6 +50,16 @@ pub struct Hyperparams {
     pub num_embed: usize,
     pub num_heads: usize,
     pub num_layers: usize,
+}
+
+impl std::fmt::Display for Hyperparams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Hyperparams: batch_size={}, block_size={}, num_embed={}, num_heads={}, num_layers={}",
+            self.batch_size, self.block_size, self.num_embed, self.num_heads, self.num_layers,
+        )
+    }
 }
 
 impl Hyperparams {
@@ -51,12 +88,12 @@ pub struct BigramModel {
     device: Device,
     rng: Lcg64Xsh32,
     pub parameters: VarMap,
-    hyperparams: Hyperparams,
+    config: Config,
 }
 
 impl BigramModel {
     pub fn new(
-        hyperparams: &Hyperparams,
+        config: &Config,
         dropout: f32,
         device: &candle_core::Device,
         rng: &Lcg64Xsh32,
@@ -69,22 +106,22 @@ impl BigramModel {
         // Each token directly reads off the logits for the next token from a lookup table.
         let token_embedding_table = embedding(
             vocab_size,
-            hyperparams.num_embed,
+            config.hyperparams.num_embed,
             var_builder.push_prefix("token_embedding"),
         )
         .expect("Unable to create token_embedding_table");
 
         let position_embedding_table = embedding(
-            hyperparams.block_size,
-            hyperparams.num_embed,
+            config.hyperparams.block_size,
+            config.hyperparams.num_embed,
             var_builder.push_prefix("position_embedding"),
         )
         .expect("Unable to create position_embedding_table");
 
         let mut blocks = seq();
-        for block_idx in 0..hyperparams.num_layers {
+        for block_idx in 0..config.hyperparams.num_layers {
             blocks = blocks.add(block::Block::new(
-                hyperparams,
+                config,
                 dropout,
                 device,
                 var_builder.push_prefix(format!("block_{}", block_idx)),
@@ -92,19 +129,19 @@ impl BigramModel {
         }
 
         blocks = blocks.add(LayerNorm::new_no_bias(
-            Tensor::ones(hyperparams.num_embed, DType::F32, device).unwrap(),
-            EPS,
+            Tensor::ones(config.hyperparams.num_embed, DType::F32, device).unwrap(),
+            config.training.eps,
         ));
 
         let lm_head = linear_no_bias(
-            hyperparams.num_embed,
+            config.hyperparams.num_embed,
             vocab_size,
             var_builder.push_prefix("lm"),
         )
         .expect("Unable to create lm_head layer");
 
         Self {
-            hyperparams: hyperparams.clone(),
+            config: config.clone(),
             token_embedding_table,
             position_embedding_table,
             blocks,
@@ -120,20 +157,28 @@ impl BigramModel {
         let train_start = std::time::Instant::now();
         let mut timer = std::time::Instant::now();
 
-        let mut optimizer = AdamW::new_lr(self.parameters.all_vars(), LEARNING_RATE)?;
+        let mut optimizer = AdamW::new_lr(
+            self.parameters.all_vars(),
+            self.config.training.learning_rate,
+        )?;
         for step in 0..num_steps {
             // sample a batch of data
-            let (input, target) =
-                dataset.get_batch(self.hyperparams.batch_size, self.hyperparams.block_size);
+            let (input, target) = dataset.get_batch(
+                self.config.hyperparams.batch_size,
+                self.config.hyperparams.block_size,
+            );
             // evaluate the loss
             let logits = self.forward(&input)?;
             let loss = utils::estimate_loss(&logits, &target)?;
             // Combines loss.backward() & optimizer.step() from pytorch.
             optimizer.backward_step(&loss)?;
-            if step % 100 == 0 || step == num_steps - 1 {
+            // Go at least one step before printing out any stats.
+            if step > 0 && (step == 1 || step % 100 == 0 || step == num_steps - 1) {
                 let train_loss = loss.to_scalar::<f32>()?;
-                let (val_input, val_target) = dataset
-                    .get_validation_batch(self.hyperparams.batch_size, self.hyperparams.block_size);
+                let (val_input, val_target) = dataset.get_validation_batch(
+                    self.config.hyperparams.batch_size,
+                    self.config.hyperparams.block_size,
+                );
                 let val_logits = self.forward(&val_input)?;
                 let val_loss =
                     utils::estimate_loss(&val_logits, &val_target)?.to_scalar::<f32>()?;
@@ -174,8 +219,8 @@ impl BigramModel {
         for _ in 0..max_new_tokens {
             // crop the ctxt to the last BLOCK_SIZE tokens
             let (_, block) = ctxt.shape().dims2()?;
-            let cropped = if block > self.hyperparams.block_size {
-                ctxt.i((.., block - self.hyperparams.block_size..))?
+            let cropped = if block > self.config.hyperparams.block_size {
+                ctxt.i((.., block - self.config.hyperparams.block_size..))?
             } else {
                 ctxt.clone()
             };

@@ -5,6 +5,7 @@ members = ["crates/nanogpt", "crates/nanotok"]
 [workspace.dependencies]
 anyhow = "1.0"
 clap = { version = "4.5.23", features = ["derive"] }
+indexmap = "2.6.0"
 log = "0.4.22"
 pretty_env_logger = "0.5.0"
 serde = { version = "1.0", features = ["derive"] }

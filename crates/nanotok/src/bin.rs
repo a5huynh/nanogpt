@@ -54,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize stuff
     pretty_env_logger::init();
+
     let args = Args::parse();
     let mut tokenizer: Box<dyn Tokenizer> = match args.model {
         TokenizerModel::BasicTokenizer => Box::new(BasicTokenizer::new()),

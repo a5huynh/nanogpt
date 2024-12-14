@@ -39,10 +39,23 @@ fn most_common_pair(chunks: &[Vec<u32>]) -> Option<(BytePair, usize)> {
     count_vec.first().map(|(k, v)| (k.to_owned(), v.to_owned()))
 }
 
+#[derive(Clone)]
 pub struct RegexTokenizer {
     pattern: Regex,
     vocab: IndexMap<u32, Vec<u32>>,
     merges: IndexMap<BytePair, u32>,
+}
+
+impl std::fmt::Display for RegexTokenizer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<RegexTokenizer vocab_size={}, merges={}, pattern={}>",
+            self.vocab.len(),
+            self.merges.len(),
+            self.pattern
+        )
+    }
 }
 
 impl RegexTokenizer {
@@ -92,7 +105,7 @@ impl Tokenizer for RegexTokenizer {
 
         // Maps byte pairs to their new index
         let mut merges: IndexMap<BytePair, u32> = IndexMap::new();
-        for merge_id in 0..num_merges {
+        for merge_id in 0..=num_merges {
             if let Some((pair, _)) = most_common_pair(&chunks) {
                 let replacement_id = idx + merge_id as u32;
                 chunks = merge_chunks(&chunks, pair, replacement_id);
@@ -111,12 +124,27 @@ impl Tokenizer for RegexTokenizer {
         }
     }
 
-    fn encode(&self, _text: &str) -> Vec<TokenId> {
-        todo!()
+    fn encode(&self, text: &str) -> Vec<TokenId> {
+        let mut tokens = str_to_tokens(text);
+        for (pair, token) in self.merges.iter() {
+            tokens = merge(&tokens, *pair, *token);
+        }
+
+        tokens
     }
 
-    fn decode(&self, _tokens: &[TokenId]) -> String {
-        todo!()
+    fn decode(&self, tokens: &[TokenId]) -> String {
+        let mut string: Vec<TokenSize> = Vec::new();
+        for tid in tokens {
+            if let Some(decoded) = self.vocab.get(tid) {
+                string.extend(decoded);
+            } else {
+                log::warn!("Unknown token id = {tid}");
+            }
+        }
+
+        let bytes = string.iter().map(|x| *x as u8).collect::<Vec<u8>>();
+        String::from_utf8_lossy(&bytes).to_string()
     }
 
     fn vocab(&self) -> IndexMap<TokenSize, Vec<u32>> {
@@ -175,11 +203,7 @@ mod tests {
         let text = "hello world!!!? (안녕하세요!) lol123 😉";
         let tokenizer = cl100k_base().unwrap();
         let encoded = tokenizer.encode(text, Default::default());
-        dbg!(&encoded);
-
         let decoded = tokenizer.decode(encoded).unwrap();
-        dbg!(&decoded);
-
         assert_eq!(text, decoded);
     }
 }

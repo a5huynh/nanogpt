@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Subcommand)]
@@ -17,6 +19,9 @@ pub enum Commands {
     Train {
         #[arg(short, long)]
         num_steps: Option<usize>,
+        /// Change which dataset is used for training.
+        #[arg(short, long)]
+        dataset_path: std::path::PathBuf,
         /// Will attempt to use an existing checkpoint as a starting point vs starting
         /// from scratch
         #[arg(short, long)]
@@ -27,11 +32,15 @@ pub enum Commands {
 #[derive(Parser)]
 #[command(version, about)]
 pub struct Args {
+    /// Use gpu (if available).
     #[arg(short, long)]
     pub gpu: bool,
-    /// Change which dataset is used for the vocab + training.
+    #[arg(long)]
+    pub seed: Option<u64>,
+    /// Tokenizer model file. If none is specified, assumes naive character
+    /// tokenization which will use the contents of the dataset as the vocab.
     #[arg(short, long)]
-    pub dataset: Option<std::path::PathBuf>,
+    pub tokenizer: Option<PathBuf>,
     #[command(subcommand)]
-    pub subcommand: Option<Commands>,
+    pub subcommand: Commands,
 }

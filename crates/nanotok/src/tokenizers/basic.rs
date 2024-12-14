@@ -9,10 +9,22 @@ use super::{
 /// Implementation of byte-pair encoding as an excercise.
 /// Ideally if you need an actually tokenizer trained on real data,
 /// use something like tiktoken.
+#[derive(Clone)]
 pub struct BasicTokenizer {
     // Reverse lookup token -> bytes
     vocab: IndexMap<TokenId, Vec<u32>>,
     merges: IndexMap<BytePair, TokenId>,
+}
+
+impl std::fmt::Display for BasicTokenizer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<BasicTokenizer vocab_size={}, merges={}>",
+            self.vocab.len(),
+            self.merges.len()
+        )
+    }
 }
 
 impl Default for BasicTokenizer {

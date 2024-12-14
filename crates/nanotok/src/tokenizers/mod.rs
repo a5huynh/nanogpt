@@ -25,7 +25,7 @@ pub struct TokenizerModel {
     merges: Vec<(BytePair, TokenId)>,
 }
 
-pub trait Tokenizer {
+pub trait Tokenizer: TokenizerClone + std::fmt::Display + Send {
     fn train(&mut self, text: &str, vocab_size: usize);
     /// Given a vocabulary, encode a string to its equivalent tokens.
     fn encode(&self, text: &str) -> Vec<TokenSize>;
@@ -35,6 +35,25 @@ pub trait Tokenizer {
 
     fn save(&self, path: PathBuf) -> anyhow::Result<()>;
     fn load(&mut self, path: PathBuf) -> anyhow::Result<()>;
+}
+
+pub trait TokenizerClone {
+    fn clone_box(&self) -> Box<dyn Tokenizer>;
+}
+
+impl<T> TokenizerClone for T
+where
+    T: 'static + Tokenizer + Clone,
+{
+    fn clone_box(&self) -> Box<dyn Tokenizer> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn Tokenizer> {
+    fn clone(&self) -> Box<dyn Tokenizer> {
+        self.clone_box()
+    }
 }
 
 pub fn str_to_tokens(string: &str) -> Vec<u32> {

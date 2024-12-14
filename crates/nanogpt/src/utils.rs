@@ -1,6 +1,6 @@
-use super::vocab::Vocab;
 use candle_core::{Device, Shape, Tensor};
 use candle_nn::loss;
+use nanotok::tokenizers::Tokenizer;
 
 pub fn masked_fill(
     input: &Tensor,
@@ -16,12 +16,9 @@ pub fn masked_fill(
     )
 }
 
-pub fn print_probs(vocab: &Vocab, probs: &[f32]) {
+pub fn print_probs(tokenizer: &dyn Tokenizer, probs: &[f32]) {
     for (idx, prob) in probs.iter().enumerate() {
-        println!(
-            "'{}': {prob:0.3}",
-            vocab.decode(&[idx as u32]).first().unwrap()
-        )
+        println!("'{}': {prob:0.3}", tokenizer.decode(&[idx as u32]))
     }
 }
 
