@@ -202,6 +202,8 @@ async fn main() -> anyhow::Result<(), GptError> {
 
             let data = load_dataset(tokenizer.as_ref(), dataset_path, &device);
             let mut dataset = Dataset::new(&rng, &data);
+            log::info!("Loaded dataset: {}", &dataset);
+
             run_training(
                 &mut dataset,
                 &mut model,

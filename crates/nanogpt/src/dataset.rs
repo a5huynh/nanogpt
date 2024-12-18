@@ -12,6 +12,18 @@ pub struct Dataset {
     rng: RngType,
 }
 
+impl std::fmt::Display for Dataset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<Dataset total_len={}, training={}, validation={}>",
+            self.len(),
+            self.training_len(),
+            self.validation_len()
+        )
+    }
+}
+
 impl Dataset {
     pub fn new(rng: &RngType, data: &Tensor) -> Self {
         let data_len = data.elem_count();
@@ -88,11 +100,5 @@ impl Dataset {
             Tensor::stack(&inputs.collect::<Vec<_>>(), 0).unwrap(),
             Tensor::stack(&targets.collect::<Vec<_>>(), 0).unwrap(),
         )
-    }
-
-    pub fn print_stats(&self) {
-        println!("Total dataset size: {}", self.len());
-        println!("Training set size: {}", self.training_len());
-        println!("Validation set size: {}", self.validation_len());
     }
 }
