@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/nanogpt", "crates/nanotok"]
+members = [ "crates/nanodiffuse","crates/nanogpt", "crates/nanotok"]
 
 [workspace.dependencies]
 anyhow = "1.0"

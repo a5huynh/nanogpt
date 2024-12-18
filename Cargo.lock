@@ -1567,6 +1567,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanodiffuse"
+version = "0.1.0"
+
+[[package]]
 name = "nanogpt"
 version = "0.1.0"
 dependencies = [
