@@ -4,5 +4,25 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = { workspace = true }
+log = { workspace = true }
+pretty_env_logger = { workspace = true }
 mnist = "0.6.0"
-ndarray = "0.16.1"
+tokio =  { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.7.2", features = ["cuda"]}
+candle-nn = { git = "https://github.com/huggingface/candle.git", version = "0.7.2", features = ["cuda"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.7.2", features = ["metal"]}
+candle-nn = { git = "https://github.com/huggingface/candle.git", version = "0.7.2", features = ["metal"] }
+
+[lib]
+name = "nanodiffuse"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nanodiffuse-cli"
+path = "src/bin.rs"
