@@ -298,8 +298,7 @@ mod test {
     use std::path::PathBuf;
 
     use crate::{
-        dataset::Dataset, load_dataset, model::Hyperparams, tokenizer::NaiveTokenizer,
-        DEFAULT_DATASET_PATH,
+        dataset::Dataset, load_dataset, tokenizer::NaiveTokenizer, Config, DEFAULT_DATASET_PATH
     };
     use candle_core::{Device, IndexOp, Tensor};
     use nanotok::tokenizers::Tokenizer;
@@ -407,10 +406,10 @@ mod test {
         dbg!("training...");
         tokenizer.train(&data, 0);
 
-        let hparams = Hyperparams::default();
+        let config = Config::default();
         let vocab_size = tokenizer.vocab().len();
 
-        let mut model = super::model::BigramModel::new(&hparams, 0.0, &device, &rng, vocab_size);
+        let mut model = super::model::BigramModel::new(&config, 0.0, &device, &rng, vocab_size);
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
 
         let (generated, _) = model.generate(&test, 10, None).await.unwrap();
