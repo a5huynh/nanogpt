@@ -89,6 +89,8 @@ impl Tokenizer for NaiveTokenizer {
 
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::DEFAULT_DATASET_PATH;
 
@@ -114,7 +116,11 @@ mod test {
     fn test_dataset_decode() -> anyhow::Result<()> {
         let mut tokenizer = NaiveTokenizer::new();
 
-        let content = std::fs::read_to_string(DEFAULT_DATASET_PATH)?;
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../");
+        path.push(DEFAULT_DATASET_PATH);
+
+        let content = std::fs::read_to_string(path)?;
         tokenizer.train(&content, 0);
 
         let test_string = "HELLO world, test";

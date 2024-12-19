@@ -295,6 +295,8 @@ fn load_dataset(tokenizer: &dyn Tokenizer, dataset_file: PathBuf, device: &Devic
 
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use crate::{
         dataset::Dataset, load_dataset, model::Hyperparams, tokenizer::NaiveTokenizer,
         DEFAULT_DATASET_PATH,
@@ -335,13 +337,18 @@ mod test {
     fn test_dataset_loading() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
+
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../");
+        path.push(DEFAULT_DATASET_PATH);
+
+        let data = std::fs::read_to_string(path.clone()).unwrap();
 
         let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
         tokenizer.train(&data, 0);
         assert_eq!(tokenizer.vocab().len(), 65);
 
-        let data = load_dataset(tokenizer.as_ref(), DEFAULT_DATASET_PATH.into(), &device);
+        let data = load_dataset(tokenizer.as_ref(), path, &device);
         let mut dataset = Dataset::new(&rng, &data);
 
         let (input, target) = dataset.get_validation_batch(1, 100);
@@ -356,12 +363,17 @@ mod test {
     fn test_batching() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
+
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../");
+        path.push(DEFAULT_DATASET_PATH);
+
+        let data = std::fs::read_to_string(path.clone()).unwrap();
 
         let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
         tokenizer.train(&data, 0);
 
-        let data = load_dataset(tokenizer.as_ref(), DEFAULT_DATASET_PATH.into(), &device);
+        let data = load_dataset(tokenizer.as_ref(), path, &device);
         let mut dataset = Dataset::new(&rng, &data);
 
         // How many independent sequences will we process in parallel
@@ -384,7 +396,12 @@ mod test {
     async fn test_generation() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
+
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../");
+        path.push(DEFAULT_DATASET_PATH);
+
+        let data = std::fs::read_to_string(path.clone()).unwrap();
 
         let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
         dbg!("training...");
