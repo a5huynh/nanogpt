@@ -1546,6 +1546,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mnist"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06eb594c0749d3a505304db3b7a9c9891630d32daad059e81bfd0d51846f95c"
+dependencies = [
+ "byteorder",
+ "log",
+]
+
+[[package]]
 name = "monostate"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1569,6 +1579,9 @@ dependencies = [
 [[package]]
 name = "nanodiffuse"
 version = "0.1.0"
+dependencies = [
+ "mnist",
+]
 
 [[package]]
 name = "nanogpt"
