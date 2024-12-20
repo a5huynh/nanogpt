@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use candle_core::Tensor;
 use mnist::*;
 use thiserror::Error;
+use util::tensor_as_image;
+
+mod util;
 
 const NUM_IMAGES: usize = 100;
 
