@@ -3,6 +3,14 @@ use nanodiffuse::{run_diffusion, DiffuseError};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<(), DiffuseError> {
+    // Default to info logging if nothing is set.
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+
+    // Initialize stuff
+    pretty_env_logger::init();
+
     let device = if cfg!(target_os = "macos") {
         Device::Metal(candle_core::MetalDevice::new(0)?)
     } else if cfg!(target_os = "windows") || cfg!(target_os = "linux") {
