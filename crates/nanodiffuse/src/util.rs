@@ -1,7 +1,6 @@
-use std::{fs::File, path::PathBuf};
 use candle_core::Tensor;
 use image::codecs::bmp::BmpEncoder;
-
+use std::{fs::File, path::PathBuf};
 
 /// Saves a tensor as an image.
 /// Assumes the tensor is a 2D tensor of (width, height).
@@ -13,12 +12,18 @@ pub fn tensor_as_image(tensor: &Tensor, path: &PathBuf) -> anyhow::Result<()> {
     let mut encoder = BmpEncoder::new(&mut file);
 
     // Convert the tensor values into grayscale.
-    let raw: Vec<u8> = tensor.to_vec2::<f32>()?
+    let raw: Vec<u8> = tensor
+        .to_vec2::<f32>()?
         .into_iter()
         .flatten()
         // reverse the values so that the number appears as black on white.
         .map(|x| (255.0 - (255.0 * x)) as u8)
         .collect();
-    encoder.encode(&raw, width as u32, height as u32,  image::ExtendedColorType::L8)?;
+    encoder.encode(
+        &raw,
+        width as u32,
+        height as u32,
+        image::ExtendedColorType::L8,
+    )?;
     Ok(())
 }

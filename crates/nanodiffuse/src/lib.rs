@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 
 use candle_core::{Device, Tensor};
+use candle_nn::Module;
 use mnist::*;
+use model::BasicUnet;
 use thiserror::Error;
 use util::tensor_as_image;
 
+mod model;
 mod util;
 
 const NUM_IMAGES: usize = 100;
@@ -60,6 +63,9 @@ pub fn run_diffusion(device: &candle_core::Device) -> Result<(), DiffuseError> {
         tensor_as_image(&corruped, &format!("img_corrupted_{idx}.bmp").into())
             .map_err(|err| DiffuseError::Other(err.to_string()))?;
     }
+
+    let _model = BasicUnet::new(1, 1, device)?;
+    _model.forward(&single)?;
 
     Ok(())
 }

@@ -299,7 +299,7 @@ mod test {
     use std::path::PathBuf;
 
     use crate::{
-        dataset::Dataset, load_dataset, tokenizer::NaiveTokenizer, Config, DEFAULT_DATASET_PATH
+        dataset::Dataset, load_dataset, tokenizer::NaiveTokenizer, Config, DEFAULT_DATASET_PATH,
     };
     use candle_core::{Device, IndexOp, Tensor};
     use nanotok::tokenizers::Tokenizer;
