@@ -7,6 +7,7 @@ use candle_nn::{
 };
 
 use rand::prelude::Distribution;
+use rand::distr::weighted::WeightedIndex;
 use rand_pcg::Lcg64Xsh32;
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
@@ -332,8 +333,7 @@ impl BigramModel {
                 // Each element in this vec is the probability of that particular character
                 // in the vocab occuring next.
                 let batch_probs = probs.i((idx, ..))?.to_vec1::<f32>()?;
-                let dist =
-                    rand::distributions::WeightedIndex::new(&batch_probs).map_err(Error::wrap)?;
+                let dist = WeightedIndex::new(&batch_probs).map_err(Error::wrap)?;
                 let next_token = dist.sample(&mut self.rng) as u32;
                 saved_probs.push(batch_probs);
                 if let Some(ref stream) = stream {
