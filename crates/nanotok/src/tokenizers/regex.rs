@@ -125,12 +125,25 @@ impl Tokenizer for RegexTokenizer {
     }
 
     fn encode(&self, text: &str) -> Vec<TokenId> {
-        let mut tokens = str_to_tokens(text);
-        for (pair, token) in self.merges.iter() {
-            tokens = merge(&tokens, *pair, *token);
+        // Split text by the regex pattern first, then encode each chunk separately.
+        // This ensures merges don't cross pattern boundaries.
+        let chunks = self
+            .pattern
+            .find_iter(text)
+            .flat_map(|x| x.ok())
+            .map(|x| x.as_str().to_string())
+            .collect::<Vec<_>>();
+
+        let mut all_tokens = Vec::new();
+        for chunk in chunks {
+            let mut tokens = str_to_tokens(&chunk);
+            for (pair, token) in self.merges.iter() {
+                tokens = merge(&tokens, *pair, *token);
+            }
+            all_tokens.extend(tokens);
         }
 
-        tokens
+        all_tokens
     }
 
     fn decode(&self, tokens: &[TokenId]) -> String {
