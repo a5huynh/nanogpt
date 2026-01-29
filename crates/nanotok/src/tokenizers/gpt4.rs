@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use tiktoken_rs::{cl100k_base, CoreBPE};
@@ -37,7 +38,9 @@ impl Tokenizer for PretrainedGTP4Tokenizer {
     }
 
     fn encode(&self, text: &str) -> Vec<super::TokenSize> {
-        self.model.encode(text, Default::default())
+        let allowed_special: HashSet<&str> = HashSet::new();
+        let (tokens, _) = self.model.encode(text, &allowed_special);
+        tokens
     }
 
     fn decode(&self, tokens: &[super::TokenSize]) -> String {

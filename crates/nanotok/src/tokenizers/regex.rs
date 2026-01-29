@@ -208,6 +208,7 @@ impl Tokenizer for RegexTokenizer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use tiktoken_rs::cl100k_base;
 
     #[test]
@@ -215,7 +216,8 @@ mod tests {
         // Test creating a vocab with the text
         let text = "hello world!!!? (안녕하세요!) lol123 😉";
         let tokenizer = cl100k_base().unwrap();
-        let encoded = tokenizer.encode(text, Default::default());
+        let allowed_special: HashSet<&str> = HashSet::new();
+        let (encoded, _) = tokenizer.encode(text, &allowed_special);
         let decoded = tokenizer.decode(encoded).unwrap();
         assert_eq!(text, decoded);
     }
