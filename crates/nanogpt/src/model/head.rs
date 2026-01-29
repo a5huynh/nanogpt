@@ -138,15 +138,13 @@ impl MultiHeadAttention {
 
 impl Module for MultiHeadAttention {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        let out = Tensor::cat(
-            &self
-                .heads
-                .iter()
-                .map(|head| head.forward(xs).unwrap())
-                .collect::<Vec<_>>(),
-            // Concat on the channel dimension
-            D::Minus1,
-        )?;
+        let head_outputs: Result<Vec<_>> = self
+            .heads
+            .iter()
+            .map(|head| head.forward(xs))
+            .collect();
+        // Concat on the channel dimension
+        let out = Tensor::cat(&head_outputs?, D::Minus1)?;
 
         let projected = self.projection.forward(&out)?;
         ops::dropout(&projected, self.dropout)
