@@ -1,7 +1,7 @@
 use candle_core::{DType, Device, Error, IndexOp, Result, Tensor};
 use candle_nn::{
     embedding, linear_no_bias, ops::softmax_last_dim, seq, AdamW, Embedding, LayerNorm, Linear,
-    Module, Optimizer, Sequential, VarBuilder, VarMap,
+    Module, Optimizer, ParamsAdamW, Sequential, VarBuilder, VarMap,
 };
 
 use rand::prelude::Distribution;
@@ -21,14 +21,32 @@ pub struct TrainingConfig {
     pub dropout: f32,
     pub eps: f64,
     pub learning_rate: f64,
+    #[serde(default = "default_warmup_steps")]
+    pub warmup_steps: usize,
+    #[serde(default = "default_max_grad_norm")]
+    pub max_grad_norm: f64,
+    #[serde(default = "default_weight_decay")]
+    pub weight_decay: f64,
+}
+
+fn default_warmup_steps() -> usize {
+    200
+}
+
+fn default_max_grad_norm() -> f64 {
+    1.0
+}
+
+fn default_weight_decay() -> f64 {
+    0.01
 }
 
 impl std::fmt::Display for TrainingConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TrainingConfig: dropout={}, eps={}, learning_rate={}",
-            self.dropout, self.eps, self.learning_rate
+            "TrainingConfig: dropout={}, eps={}, lr={}, warmup={}, max_grad_norm={}, weight_decay={}",
+            self.dropout, self.eps, self.learning_rate, self.warmup_steps, self.max_grad_norm, self.weight_decay
         )
     }
 }
@@ -39,6 +57,9 @@ impl Default for TrainingConfig {
             dropout: 0.2,
             eps: 1e-5,
             learning_rate: 3e-4,
+            warmup_steps: default_warmup_steps(),
+            max_grad_norm: default_max_grad_norm(),
+            weight_decay: default_weight_decay(),
         }
     }
 }
@@ -157,11 +178,29 @@ impl BigramModel {
         let train_start = std::time::Instant::now();
         let mut timer = std::time::Instant::now();
 
-        let mut optimizer = AdamW::new_lr(
-            self.parameters.all_vars(),
-            self.config.training.learning_rate,
-        )?;
+        let warmup_steps = self.config.training.warmup_steps;
+        let max_lr = self.config.training.learning_rate;
+        let max_grad_norm = self.config.training.max_grad_norm;
+
+        // Configure AdamW with proper weight decay
+        let params = ParamsAdamW {
+            lr: if warmup_steps > 0 { 0.0 } else { max_lr },
+            beta1: 0.9,
+            beta2: 0.95, // slightly lower beta2 for transformers
+            eps: 1e-8,
+            weight_decay: self.config.training.weight_decay,
+        };
+        let mut optimizer = AdamW::new(self.parameters.all_vars(), params)?;
+
         for step in 0..num_steps {
+            // Learning rate warmup: linear increase from 0 to max_lr
+            if step < warmup_steps {
+                let lr = max_lr * (step as f64 + 1.0) / warmup_steps as f64;
+                optimizer.set_learning_rate(lr);
+            } else if step == warmup_steps {
+                optimizer.set_learning_rate(max_lr);
+            }
+
             // sample a batch of data
             let (input, target) = dataset.get_batch(
                 self.config.hyperparams.batch_size,
@@ -170,8 +209,32 @@ impl BigramModel {
             // evaluate the loss
             let logits = self.forward(&input)?;
             let loss = utils::estimate_loss(&logits, &target)?;
-            // Combines loss.backward() & optimizer.step() from pytorch.
-            optimizer.backward_step(&loss)?;
+
+            // Compute gradients
+            let mut grads = loss.backward()?;
+
+            // Gradient clipping by global norm
+            let mut total_norm_sq = 0.0f64;
+            for var in self.parameters.all_vars() {
+                if let Some(grad) = grads.get(&var) {
+                    let norm_sq = grad.sqr()?.sum_all()?.to_scalar::<f32>()? as f64;
+                    total_norm_sq += norm_sq;
+                }
+            }
+            let total_norm = total_norm_sq.sqrt();
+
+            // Scale gradients if norm exceeds max
+            if total_norm > max_grad_norm {
+                let clip_coef = max_grad_norm / (total_norm + 1e-6);
+                for var in self.parameters.all_vars() {
+                    if let Some(grad) = grads.remove(&var) {
+                        let clipped = (grad * clip_coef)?;
+                        grads.insert(&var, clipped);
+                    }
+                }
+            }
+            optimizer.step(&grads)?;
+
             // Go at least one step before printing out any stats.
             if step > 0 && (step == 1 || step % 100 == 0 || step == num_steps - 1) {
                 let train_loss = loss.to_scalar::<f32>()?;
@@ -185,8 +248,9 @@ impl BigramModel {
 
                 let tps = (timer.elapsed().as_secs_f32() / 100.0) * 1000.0;
                 timer = std::time::Instant::now();
+                let current_lr = optimizer.learning_rate();
                 log::info!(
-                    "step {step} - train loss = {train_loss:0.3}, val loss = {val_loss:0.3}, per step: {tps:0.3}ms",
+                    "step {step} - train loss = {train_loss:0.3}, val loss = {val_loss:0.3}, lr = {current_lr:.2e}, per step: {tps:0.3}ms",
                 );
             }
         }

@@ -2,12 +2,13 @@
 dropout = 0.2
 eps = 1e-5
 learning_rate = 3e-4
+warmup_steps = 200
+max_grad_norm = 1.0
+weight_decay = 0.01
 
 [hyperparams]
-# Technically only for training but we'll keep it here.
-batch_size = 8
+batch_size = 16
 block_size = 256
-
 num_embed = 384
-num_heads = 4
-num_layers = 4
+num_heads = 6
+num_layers = 6
