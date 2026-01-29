@@ -22,8 +22,8 @@ train-resume steps="5000" checkpoint="./models/latest.safetensors":
     RUST_LOG=info cargo run --release --bin nanogpt -- {{ if gpu == "true" { "--gpu" } else { "" } }} train --dataset-path {{dataset}} --num-steps {{steps}} --checkpoint {{checkpoint}}
 
 # generate text from trained model
-generate tokens="256":
-    RUST_LOG=info cargo run --release --bin nanogpt -- {{ if gpu == "true" { "--gpu" } else { "" } }} generate --num-tokens {{tokens}}
+generate tokens="256" prompt="":
+    RUST_LOG=info cargo run --release --bin nanogpt -- {{ if gpu == "true" { "--gpu" } else { "" } }} generate --num-tokens {{tokens}} --stream {{ if prompt != "" { "--prompt '" + prompt + "'" } else { "" } }}
 
 # train a BPE tokenizer (models: BasicTokenizer, Gpt2, Gpt4)
 train-tokenizer vocab_size="512" model="Gpt4":
