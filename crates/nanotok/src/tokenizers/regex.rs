@@ -60,10 +60,10 @@ impl std::fmt::Display for RegexTokenizer {
 
 impl RegexTokenizer {
     pub fn new(pattern: &str) -> Self {
-        // By default, the vocav size is represented by 256 (all bytes) with no merges,
+        // By default, the vocab size is represented by 256 (all bytes) with no merges,
         // no patterns.
         let mut vocab = IndexMap::new();
-        for idx in 0..255 {
+        for idx in 0..256 {
             vocab.insert(idx, vec![idx]);
         }
 
@@ -105,7 +105,7 @@ impl Tokenizer for RegexTokenizer {
 
         // Maps byte pairs to their new index
         let mut merges: IndexMap<BytePair, u32> = IndexMap::new();
-        for merge_id in 0..=num_merges {
+        for merge_id in 0..num_merges {
             if let Some((pair, _)) = most_common_pair(&chunks) {
                 let replacement_id = idx + merge_id as u32;
                 chunks = merge_chunks(&chunks, pair, replacement_id);
@@ -125,12 +125,25 @@ impl Tokenizer for RegexTokenizer {
     }
 
     fn encode(&self, text: &str) -> Vec<TokenId> {
-        let mut tokens = str_to_tokens(text);
-        for (pair, token) in self.merges.iter() {
-            tokens = merge(&tokens, *pair, *token);
+        // Split text by the regex pattern first, then encode each chunk separately.
+        // This ensures merges don't cross pattern boundaries.
+        let chunks = self
+            .pattern
+            .find_iter(text)
+            .flat_map(|x| x.ok())
+            .map(|x| x.as_str().to_string())
+            .collect::<Vec<_>>();
+
+        let mut all_tokens = Vec::new();
+        for chunk in chunks {
+            let mut tokens = str_to_tokens(&chunk);
+            for (pair, token) in self.merges.iter() {
+                tokens = merge(&tokens, *pair, *token);
+            }
+            all_tokens.extend(tokens);
         }
 
-        tokens
+        all_tokens
     }
 
     fn decode(&self, tokens: &[TokenId]) -> String {

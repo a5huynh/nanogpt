@@ -40,7 +40,7 @@ pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
 
 pub const CONFIG_FILE: &str = "config.toml";
 pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
-pub const DEFAULT_DATASET_PATH: &str = "./data/input.txt";
+pub const DEFAULT_DATASET_PATH: &str = "./data/llm/input.txt";
 
 #[derive(Error, Debug)]
 pub enum GptError {
@@ -295,9 +295,10 @@ fn load_dataset(tokenizer: &dyn Tokenizer, dataset_file: PathBuf, device: &Devic
 
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use crate::{
-        dataset::Dataset, load_dataset, model::Hyperparams, tokenizer::NaiveTokenizer,
-        DEFAULT_DATASET_PATH,
+        dataset::Dataset, load_dataset, tokenizer::NaiveTokenizer, Config, DEFAULT_DATASET_PATH
     };
     use candle_core::{Device, IndexOp, Tensor};
     use nanotok::tokenizers::Tokenizer;
@@ -335,13 +336,18 @@ mod test {
     fn test_dataset_loading() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
+
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../");
+        path.push(DEFAULT_DATASET_PATH);
+
+        let data = std::fs::read_to_string(path.clone()).unwrap();
 
         let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
         tokenizer.train(&data, 0);
         assert_eq!(tokenizer.vocab().len(), 65);
 
-        let data = load_dataset(tokenizer.as_ref(), DEFAULT_DATASET_PATH.into(), &device);
+        let data = load_dataset(tokenizer.as_ref(), path, &device);
         let mut dataset = Dataset::new(&rng, &data);
 
         let (input, target) = dataset.get_validation_batch(1, 100);
@@ -356,12 +362,17 @@ mod test {
     fn test_batching() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
+
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../");
+        path.push(DEFAULT_DATASET_PATH);
+
+        let data = std::fs::read_to_string(path.clone()).unwrap();
 
         let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
         tokenizer.train(&data, 0);
 
-        let data = load_dataset(tokenizer.as_ref(), DEFAULT_DATASET_PATH.into(), &device);
+        let data = load_dataset(tokenizer.as_ref(), path, &device);
         let mut dataset = Dataset::new(&rng, &data);
 
         // How many independent sequences will we process in parallel
@@ -384,16 +395,21 @@ mod test {
     async fn test_generation() {
         let device = Device::Cpu;
         let rng = rand_pcg::Pcg32::seed_from_u64(1337);
-        let data = std::fs::read_to_string(DEFAULT_DATASET_PATH).unwrap();
+
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../");
+        path.push(DEFAULT_DATASET_PATH);
+
+        let data = std::fs::read_to_string(path.clone()).unwrap();
 
         let mut tokenizer: Box<dyn Tokenizer> = Box::new(NaiveTokenizer::new());
         dbg!("training...");
         tokenizer.train(&data, 0);
 
-        let hparams = Hyperparams::default();
+        let config = Config::default();
         let vocab_size = tokenizer.vocab().len();
 
-        let mut model = super::model::BigramModel::new(&hparams, 0.0, &device, &rng, vocab_size);
+        let mut model = super::model::BigramModel::new(&config, 0.0, &device, &rng, vocab_size);
         let test = Tensor::zeros((1, 1), candle_core::DType::U32, &device).unwrap();
 
         let (generated, _) = model.generate(&test, 10, None).await.unwrap();

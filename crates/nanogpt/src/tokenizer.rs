@@ -78,9 +78,12 @@ impl Tokenizer for NaiveTokenizer {
     fn vocab(&self) -> IndexMap<nanotok::tokenizers::TokenId, Vec<u32>> {
         let mut map = IndexMap::new();
         for (idx, ch) in self.vocab.iter().enumerate() {
-            let mut bytes: Vec<u8> = vec![0];
-            ch.encode_utf8(&mut bytes);
-            map.insert(idx as TokenId, bytes.iter().map(|x| *x as u32).collect());
+            let mut bytes = [0u8; 4];
+            let encoded = ch.encode_utf8(&mut bytes);
+            map.insert(
+                idx as TokenId,
+                encoded.as_bytes().iter().map(|x| *x as u32).collect(),
+            );
         }
 
         map
@@ -89,6 +92,8 @@ impl Tokenizer for NaiveTokenizer {
 
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::DEFAULT_DATASET_PATH;
 
@@ -114,7 +119,11 @@ mod test {
     fn test_dataset_decode() -> anyhow::Result<()> {
         let mut tokenizer = NaiveTokenizer::new();
 
-        let content = std::fs::read_to_string(DEFAULT_DATASET_PATH)?;
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../");
+        path.push(DEFAULT_DATASET_PATH);
+
+        let content = std::fs::read_to_string(path)?;
         tokenizer.train(&content, 0);
 
         let test_string = "HELLO world, test";

@@ -1,2 +1,5 @@
 /target
 /models/**/latest*
+/data/images/mnist
+/data/llm/tinystories.txt
+/data/llm/wikitext2.txt

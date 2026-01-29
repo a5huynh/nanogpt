@@ -1,4 +1,4 @@
-use candle_core::{Device, Result, Tensor, D};
+use candle_core::{Device, IndexOp, Result, Tensor, D};
 use candle_nn::{
     linear_no_bias,
     ops::{self, softmax_last_dim},
@@ -77,12 +77,16 @@ impl Module for Head {
         // The weights are normalized so that variance is keep around 1.
         let (_, _, hs) = k.shape().dims3()?;
         // (B, T, hs) @ (B, hs, T) -> (B, T, T)
-        let mut scores = (scores * (hs as f64).powf(-0.5))?;
-        // Ignore future positions
-        if block_size >= self.hyperparams.block_size {
-            let mask = self.mask.broadcast_as(scores.shape())?;
-            scores = utils::masked_fill(&scores, &mask, f32::NEG_INFINITY, &self.device)?;
-        }
+        let scores = (scores * (hs as f64).powf(-0.5))?;
+        // Ignore future positions by applying causal mask.
+        // Slice the pre-computed mask to match current sequence length.
+        let mask = if block_size < self.hyperparams.block_size {
+            self.mask.i((..block_size, ..block_size))?
+        } else {
+            self.mask.clone()
+        };
+        let mask = mask.broadcast_as(scores.shape())?;
+        let scores = utils::masked_fill(&scores, &mask, f32::NEG_INFINITY, &self.device)?;
         let scores = softmax_last_dim(&scores)?;
         // Adding dropout to prevent overfitting by randomly shutting off neurons
         let scores = ops::dropout(&scores, self.dropout)?;
@@ -134,15 +138,13 @@ impl MultiHeadAttention {
 
 impl Module for MultiHeadAttention {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        let out = Tensor::cat(
-            &self
-                .heads
-                .iter()
-                .map(|head| head.forward(xs).unwrap())
-                .collect::<Vec<_>>(),
-            // Concat on the channel dimension
-            D::Minus1,
-        )?;
+        let head_outputs: Result<Vec<_>> = self
+            .heads
+            .iter()
+            .map(|head| head.forward(xs))
+            .collect();
+        // Concat on the channel dimension
+        let out = Tensor::cat(&head_outputs?, D::Minus1)?;
 
         let projected = self.projection.forward(&out)?;
         ops::dropout(&projected, self.dropout)
