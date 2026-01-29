@@ -5,6 +5,7 @@ learning_rate = 3e-4
 warmup_steps = 200
 max_grad_norm = 1.0
 weight_decay = 0.01
+checkpoint_interval = 500
 
 [hyperparams]
 batch_size = 16

@@ -280,8 +280,9 @@ fn run_training(
     num_steps: usize,
 ) -> Result<(), GptError> {
     log::info!("starting model training, running for {num_steps} steps");
-    model.train(dataset, num_steps)?;
-    log::info!("Saving model to {LATEST_MODEL_PATH}");
+    model.train(dataset, num_steps, LATEST_MODEL_PATH)?;
+    // Save final checkpoint
+    log::info!("Saving final model to {LATEST_MODEL_PATH}");
     model.parameters.save(LATEST_MODEL_PATH)?;
     Ok(())
 }

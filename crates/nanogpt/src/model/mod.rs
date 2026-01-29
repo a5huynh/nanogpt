@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use candle_core::{DType, Device, Error, IndexOp, Result, Tensor};
 use candle_nn::{
     embedding, linear_no_bias, ops::softmax_last_dim, seq, AdamW, Embedding, LayerNorm, Linear,
@@ -27,6 +29,8 @@ pub struct TrainingConfig {
     pub max_grad_norm: f64,
     #[serde(default = "default_weight_decay")]
     pub weight_decay: f64,
+    #[serde(default = "default_checkpoint_interval")]
+    pub checkpoint_interval: usize,
 }
 
 fn default_warmup_steps() -> usize {
@@ -41,12 +45,16 @@ fn default_weight_decay() -> f64 {
     0.01
 }
 
+fn default_checkpoint_interval() -> usize {
+    1000
+}
+
 impl std::fmt::Display for TrainingConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TrainingConfig: dropout={}, eps={}, lr={}, warmup={}, max_grad_norm={}, weight_decay={}",
-            self.dropout, self.eps, self.learning_rate, self.warmup_steps, self.max_grad_norm, self.weight_decay
+            "TrainingConfig: dropout={}, eps={}, lr={}, warmup={}, max_grad_norm={}, weight_decay={}, checkpoint_interval={}",
+            self.dropout, self.eps, self.learning_rate, self.warmup_steps, self.max_grad_norm, self.weight_decay, self.checkpoint_interval
         )
     }
 }
@@ -60,6 +68,7 @@ impl Default for TrainingConfig {
             warmup_steps: default_warmup_steps(),
             max_grad_norm: default_max_grad_norm(),
             weight_decay: default_weight_decay(),
+            checkpoint_interval: default_checkpoint_interval(),
         }
     }
 }
@@ -173,7 +182,12 @@ impl BigramModel {
         }
     }
 
-    pub fn train(&self, dataset: &mut Dataset, num_steps: usize) -> Result<()> {
+    pub fn train<P: AsRef<Path>>(
+        &self,
+        dataset: &mut Dataset,
+        num_steps: usize,
+        checkpoint_path: P,
+    ) -> Result<()> {
         // setup some timers for see how efficient we are.
         let train_start = std::time::Instant::now();
         let mut timer = std::time::Instant::now();
@@ -181,6 +195,7 @@ impl BigramModel {
         let warmup_steps = self.config.training.warmup_steps;
         let max_lr = self.config.training.learning_rate;
         let max_grad_norm = self.config.training.max_grad_norm;
+        let checkpoint_interval = self.config.training.checkpoint_interval;
 
         // Configure AdamW with proper weight decay
         let params = ParamsAdamW {
@@ -252,6 +267,14 @@ impl BigramModel {
                 log::info!(
                     "step {step} - train loss = {train_loss:0.3}, val loss = {val_loss:0.3}, lr = {current_lr:.2e}, per step: {tps:0.3}ms",
                 );
+            }
+
+            // Save checkpoint periodically
+            if checkpoint_interval > 0 && step > 0 && step % checkpoint_interval == 0 {
+                log::info!("Saving checkpoint at step {step}...");
+                self.parameters
+                    .save(&checkpoint_path)
+                    .expect("Failed to save checkpoint");
             }
         }
 
