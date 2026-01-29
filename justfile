@@ -1,4 +1,5 @@
 dataset := "./data/llm/input.txt"
+gpu := "true"
 
 alias b := build
 alias c := clippy
@@ -14,15 +15,15 @@ clippy:
 
 # train the model
 train steps="5000":
-    RUST_LOG=info cargo run --release --bin nanogpt -- train --dataset-path {{dataset}} --num-steps {{steps}}
+    RUST_LOG=info cargo run --release --bin nanogpt -- {{ if gpu == "true" { "--gpu" } else { "" } }} train --dataset-path {{dataset}} --num-steps {{steps}}
 
 # resume training
 train-resume steps="5000" checkpoint="./models/latest.safetensors":
-    RUST_LOG=info cargo run --release --bin nanogpt -- train --dataset-path {{dataset}} --num-steps {{steps}} --checkpoint {{checkpoint}}
+    RUST_LOG=info cargo run --release --bin nanogpt -- {{ if gpu == "true" { "--gpu" } else { "" } }} train --dataset-path {{dataset}} --num-steps {{steps}} --checkpoint {{checkpoint}}
 
 # generate text from trained model
 generate tokens="256":
-    RUST_LOG=info cargo run --release --bin nanogpt -- generate --num-tokens {{tokens}}
+    RUST_LOG=info cargo run --release --bin nanogpt -- {{ if gpu == "true" { "--gpu" } else { "" } }} generate --num-tokens {{tokens}}
 
 # train a BPE tokenizer (models: BasicTokenizer, Gpt2, Gpt4)
 train-tokenizer vocab_size="512" model="Gpt4":
