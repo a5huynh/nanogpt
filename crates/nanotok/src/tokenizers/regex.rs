@@ -60,10 +60,10 @@ impl std::fmt::Display for RegexTokenizer {
 
 impl RegexTokenizer {
     pub fn new(pattern: &str) -> Self {
-        // By default, the vocav size is represented by 256 (all bytes) with no merges,
+        // By default, the vocab size is represented by 256 (all bytes) with no merges,
         // no patterns.
         let mut vocab = IndexMap::new();
-        for idx in 0..255 {
+        for idx in 0..256 {
             vocab.insert(idx, vec![idx]);
         }
 

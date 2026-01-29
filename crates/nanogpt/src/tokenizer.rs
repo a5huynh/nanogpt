@@ -78,9 +78,12 @@ impl Tokenizer for NaiveTokenizer {
     fn vocab(&self) -> IndexMap<nanotok::tokenizers::TokenId, Vec<u32>> {
         let mut map = IndexMap::new();
         for (idx, ch) in self.vocab.iter().enumerate() {
-            let mut bytes: Vec<u8> = vec![0];
-            ch.encode_utf8(&mut bytes);
-            map.insert(idx as TokenId, bytes.iter().map(|x| *x as u32).collect());
+            let mut bytes = [0u8; 4];
+            let encoded = ch.encode_utf8(&mut bytes);
+            map.insert(
+                idx as TokenId,
+                encoded.as_bytes().iter().map(|x| *x as u32).collect(),
+            );
         }
 
         map
