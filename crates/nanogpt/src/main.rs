@@ -40,7 +40,7 @@ pub const DEFAULT_TRAINING_STEPS: usize = 5_000;
 
 pub const CONFIG_FILE: &str = "config.toml";
 pub const LATEST_MODEL_PATH: &str = "./models/latest.safetensors";
-pub const DEFAULT_DATASET_PATH: &str = "./data/input.txt";
+pub const DEFAULT_DATASET_PATH: &str = "./data/llm/input.txt";
 
 #[derive(Error, Debug)]
 pub enum GptError {
