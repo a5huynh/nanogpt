@@ -16,6 +16,7 @@ pub struct Head {
     mask: Tensor,
     device: Device,
     dropout: f32,
+    training: bool,
     hyperparams: Hyperparams,
 }
 
@@ -57,8 +58,13 @@ impl Head {
             mask,
             device: device.clone(),
             dropout,
+            training: true,
             hyperparams: hparams.clone(),
         }
+    }
+
+    pub fn set_training(&mut self, training: bool) {
+        self.training = training;
     }
 }
 
@@ -89,7 +95,8 @@ impl Module for Head {
         let scores = utils::masked_fill(&scores, &mask, f32::NEG_INFINITY, &self.device)?;
         let scores = softmax_last_dim(&scores)?;
         // Adding dropout to prevent overfitting by randomly shutting off neurons
-        let scores = ops::dropout(&scores, self.dropout)?;
+        let dropout = if self.training { self.dropout } else { 0.0 };
+        let scores = ops::dropout(&scores, dropout)?;
         // Weighted aggregation of the values.
         let v = self.value.forward(input)?;
         scores.matmul(&v)
@@ -101,6 +108,7 @@ pub struct MultiHeadAttention {
     heads: Vec<Head>,
     projection: Linear,
     dropout: f32,
+    training: bool,
 }
 
 impl MultiHeadAttention {
@@ -132,6 +140,14 @@ impl MultiHeadAttention {
             heads,
             projection,
             dropout,
+            training: true,
+        }
+    }
+
+    pub fn set_training(&mut self, training: bool) {
+        self.training = training;
+        for head in &mut self.heads {
+            head.set_training(training);
         }
     }
 }
@@ -147,6 +163,7 @@ impl Module for MultiHeadAttention {
         let out = Tensor::cat(&head_outputs?, D::Minus1)?;
 
         let projected = self.projection.forward(&out)?;
-        ops::dropout(&projected, self.dropout)
+        let dropout = if self.training { self.dropout } else { 0.0 };
+        ops::dropout(&projected, dropout)
     }
 }

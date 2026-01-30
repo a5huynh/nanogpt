@@ -1,5 +1,5 @@
 use candle_core::{Device, Result, Tensor};
-use candle_nn::{linear_no_bias, ops, seq, Activation, LayerNorm, Module, Sequential, VarBuilder};
+use candle_nn::{linear_no_bias, ops, Activation, LayerNorm, Linear, Module, VarBuilder};
 
 use crate::Config;
 
@@ -49,6 +49,11 @@ impl Block {
             ),
         }
     }
+
+    pub fn set_training(&mut self, training: bool) {
+        self.attention.set_training(training);
+        self.feed_forward.set_training(training);
+    }
 }
 
 impl Module for Block {
@@ -61,37 +66,47 @@ impl Module for Block {
 /// Simple multi-layer perceptron
 /// Implementation of the position-wise feed-forward network in the transformer paper.
 pub struct FeedForward {
-    net: Sequential,
+    linear1: Linear,
+    projection: Linear,
+    dropout: f32,
+    training: bool,
 }
 
 impl FeedForward {
     pub fn new(num_embed: usize, dropout: f32, var_builder: VarBuilder) -> Self {
-        let net = seq()
-            .add(
-                linear_no_bias(
-                    num_embed,
-                    FEED_FORWARD_OUT_SCALE * num_embed,
-                    var_builder.push_prefix("linear1"),
-                )
-                .expect("Unable to create linear layer"),
-            )
-            .add(Activation::Relu)
-            .add(
-                linear_no_bias(
-                    FEED_FORWARD_OUT_SCALE * num_embed,
-                    num_embed,
-                    var_builder.push_prefix("projection"),
-                )
-                .expect("Unable to create linear layer"),
-            )
-            .add_fn(move |xs| ops::dropout(xs, dropout));
+        let linear1 = linear_no_bias(
+            num_embed,
+            FEED_FORWARD_OUT_SCALE * num_embed,
+            var_builder.push_prefix("linear1"),
+        )
+        .expect("Unable to create linear layer");
 
-        Self { net }
+        let projection = linear_no_bias(
+            FEED_FORWARD_OUT_SCALE * num_embed,
+            num_embed,
+            var_builder.push_prefix("projection"),
+        )
+        .expect("Unable to create linear layer");
+
+        Self {
+            linear1,
+            projection,
+            dropout,
+            training: true,
+        }
+    }
+
+    pub fn set_training(&mut self, training: bool) {
+        self.training = training;
     }
 }
 
 impl Module for FeedForward {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        self.net.forward(xs)
+        let xs = self.linear1.forward(xs)?;
+        let xs = Activation::Relu.forward(&xs)?;
+        let xs = self.projection.forward(&xs)?;
+        let dropout = if self.training { self.dropout } else { 0.0 };
+        ops::dropout(&xs, dropout)
     }
 }

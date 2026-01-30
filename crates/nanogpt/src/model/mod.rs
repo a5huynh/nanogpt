@@ -2,8 +2,8 @@ use std::path::Path;
 
 use candle_core::{DType, Device, Error, IndexOp, Result, Tensor};
 use candle_nn::{
-    embedding, linear_no_bias, ops::softmax_last_dim, seq, AdamW, Embedding, LayerNorm, Linear,
-    Module, Optimizer, ParamsAdamW, Sequential, VarBuilder, VarMap,
+    embedding, linear_no_bias, ops::softmax_last_dim, AdamW, Embedding, LayerNorm, Linear, Module,
+    Optimizer, ParamsAdamW, VarBuilder, VarMap,
 };
 
 use rand::prelude::Distribution;
@@ -115,7 +115,8 @@ pub struct BigramModel {
     token_embedding_table: Embedding,
     position_embedding_table: Embedding,
     lm_head: Linear,
-    blocks: Sequential,
+    blocks: Vec<block::Block>,
+    final_layer_norm: LayerNorm,
     device: Device,
     rng: Lcg64Xsh32,
     pub parameters: VarMap,
@@ -149,20 +150,21 @@ impl BigramModel {
         )
         .expect("Unable to create position_embedding_table");
 
-        let mut blocks = seq();
-        for block_idx in 0..config.hyperparams.num_layers {
-            blocks = blocks.add(block::Block::new(
-                config,
-                dropout,
-                device,
-                var_builder.push_prefix(format!("block_{}", block_idx)),
-            ))
-        }
+        let blocks: Vec<block::Block> = (0..config.hyperparams.num_layers)
+            .map(|block_idx| {
+                block::Block::new(
+                    config,
+                    dropout,
+                    device,
+                    var_builder.push_prefix(format!("block_{}", block_idx)),
+                )
+            })
+            .collect();
 
-        blocks = blocks.add(LayerNorm::new_no_bias(
+        let final_layer_norm = LayerNorm::new_no_bias(
             Tensor::ones(config.hyperparams.num_embed, DType::F32, device).unwrap(),
             config.training.eps,
-        ));
+        );
 
         let lm_head = linear_no_bias(
             config.hyperparams.num_embed,
@@ -176,6 +178,7 @@ impl BigramModel {
             token_embedding_table,
             position_embedding_table,
             blocks,
+            final_layer_norm,
             device: device.clone(),
             rng: rng.clone(),
             parameters: var_map,
@@ -183,8 +186,15 @@ impl BigramModel {
         }
     }
 
+    /// Set training mode for all blocks (controls dropout behavior)
+    pub fn set_training(&mut self, training: bool) {
+        for block in &mut self.blocks {
+            block.set_training(training);
+        }
+    }
+
     pub fn train<P: AsRef<Path>>(
-        &self,
+        &mut self,
         dataset: &mut Dataset,
         num_steps: usize,
         checkpoint_path: P,
@@ -254,6 +264,9 @@ impl BigramModel {
             // Go at least one step before printing out any stats.
             if step > 0 && (step == 1 || step % 100 == 0 || step == num_steps - 1) {
                 let train_loss = loss.to_scalar::<f32>()?;
+
+                // Disable dropout for validation
+                self.set_training(false);
                 let (val_input, val_target) = dataset.get_validation_batch(
                     self.config.hyperparams.batch_size,
                     self.config.hyperparams.block_size,
@@ -261,6 +274,8 @@ impl BigramModel {
                 let val_logits = self.forward(&val_input)?;
                 let val_loss =
                     utils::estimate_loss(&val_logits, &val_target)?.to_scalar::<f32>()?;
+                // Re-enable dropout for training
+                self.set_training(true);
 
                 let tps = (timer.elapsed().as_secs_f32() / 100.0) * 1000.0;
                 timer = std::time::Instant::now();
@@ -296,6 +311,9 @@ impl BigramModel {
     ) -> Result<(Tensor, Vec<Vec<f32>>)> {
         log::info!("Generating {max_new_tokens} token(s)");
         log::info!("Starting shape: {:?}", ctxt.shape());
+
+        // Disable dropout during generation
+        self.set_training(false);
 
         if let Some(ref stream) = stream {
             stream.send(TokenSample::Start).await.unwrap();
@@ -373,10 +391,14 @@ impl Module for BigramModel {
         let pos_embed = self.position_embedding_table.forward(&positions)?; // shape = [T, C]
 
         // Vector with encoded tokens & positions
-        let x = tok_embed.broadcast_add(&pos_embed)?;
-        // Appply a single head of self-attention.
+        let mut x = tok_embed.broadcast_add(&pos_embed)?;
+        // Apply transformer blocks
         log::debug!("applying transformer blocks");
-        let x = self.blocks.forward(&x)?; // shape = [B, T, C];
+        for block in &self.blocks {
+            x = block.forward(&x)?;
+        }
+        // Apply final layer norm
+        let x = self.final_layer_norm.forward(&x)?; // shape = [B, T, C]
 
         log::debug!("applying lm_head");
         self.lm_head.forward(&x)
