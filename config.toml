@@ -1,14 +1,14 @@
 [training]
-dropout = 0.2
+dropout = 0.1
 eps = 1e-5
-learning_rate = 3e-4
+learning_rate = 6e-4
 warmup_steps = 200
 max_grad_norm = 1.0
 weight_decay = 0.01
 checkpoint_interval = 500
 
 [hyperparams]
-batch_size = 16
+batch_size = 32 
 block_size = 256
 num_embed = 384
 num_heads = 6
